@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>ワードデュオ</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{
+  --bg:#10192e; --panel:#1b2742; --panel2:#24324f; --text:#f4f6fb; --muted:#9aa6c0;
+  --accent:#ffcc33; --green:#1e9b53; --clear:#ffd23f; --neutral:#7b8495; --danger:#e5484d; --ok:#3ccf7a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic UI","Yu Gothic",Meiryo,sans-serif;
+  -webkit-tap-highlight-color:transparent}
+button{font:inherit;cursor:pointer;border:none;border-radius:10px;padding:10px 18px;background:#3a4a6b;color:#fff;font-weight:700}
+button:hover{filter:brightness(1.1)}
+button.primary{background:var(--accent);color:#1a1a1a}
+button.danger{background:var(--danger)}
+button.ghost{background:transparent;border:1px solid #4a5a7c;color:var(--text)}
+button.small{padding:6px 12px;font-size:13px;border-radius:8px}
+button:disabled{background:#4a4f5a !important;color:#9aa0aa !important;cursor:not-allowed;filter:none}
+input[type=text],textarea{font:inherit;padding:10px 12px;border-radius:8px;border:1px solid #4a5a7c;background:#0d1526;color:var(--text);width:100%}
+h1,h2,h3{margin:0 0 12px}
+.muted{color:var(--muted)}
+.page{max-width:1100px;margin:0 auto;padding:16px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spacer{flex:1}
+.card{background:var(--panel);border-radius:14px;padding:16px;margin-bottom:14px}
+
+/* ===== ヘッダー（メイン・管理） ===== */
+.topbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.topbar .title{font-size:22px;font-weight:900;letter-spacing:.05em}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:700}
+.chip .dot{width:9px;height:9px;border-radius:50%;background:#666}
+.chip .dot.on{background:var(--ok)}
+.chip .x{background:none;padding:0 2px;color:var(--muted);font-size:14px}
+.side-tag{display:inline-block;background:var(--accent);color:#1a1a1a;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:900}
+
+/* ===== 盤面 ===== */
+.board{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.cell{position:relative;background:#fff;color:#1d1d1f;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  text-align:center;font-weight:800;line-height:1.15;word-break:break-all;user-select:none;-webkit-user-select:none;overflow:hidden;border:3px solid transparent}
+.cell .w{display:block;word-break:keep-all;white-space:nowrap}
+.cell.k-g{background:var(--green);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55)}
+.cell.k-k{background:#000;color:#fff;border-color:#8a8a8a}
+.cell.is-clear{border-color:var(--clear)}
+.cell.is-clear:not(.k-g):not(.k-k){background:#fff1b8}
+.cell.is-neutral:not(.k-g):not(.k-k){background:#d3d8e1;color:#3a3f48}
+.cell .badge{position:absolute;left:0;right:0;bottom:0;font-weight:900;letter-spacing:.08em;text-shadow:none}
+.badge.clear{background:var(--clear);color:#222}
+.badge.neutral{background:var(--neutral);color:#fff}
+.cell.clickable{cursor:pointer;transition:transform .08s}
+.cell.clickable:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.35)}
+.cell.tappable{cursor:pointer}
+.cell.tappable:active{transform:scale(.95)}
+
+body.host .cell{aspect-ratio:16/9;padding:6px 8px 26px}
+body.host .cell .badge{font-size:16px;padding:2px 0}
+body.sub .board{gap:5px}
+body.sub .cell{aspect-ratio:1/0.92;padding:2px 2px 14px;border-radius:7px;border-width:2px}
+body.sub .cell .badge{font-size:10px;padding:1px 0}
+
+/* ===== メイン：ステータス ===== */
+.status-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.stat{background:var(--panel);border-radius:12px;padding:10px 14px;text-align:center}
+.stat .lbl{font-size:13px;color:var(--muted);font-weight:700}
+.stat .val{font-size:30px;font-weight:900}
+.stat .val small{font-size:16px;color:var(--muted)}
+.stat.big .val{color:var(--accent)}
+.lobby{display:flex;gap:28px;align-items:center;justify-content:center;flex-wrap:wrap;padding:20px 0}
+.qrbox{display:inline-block;background:#fff;padding:14px;border-radius:12px;line-height:0}
+.url{word-break:break-all;font-size:14px;color:var(--muted);margin-top:8px}
+.slots{display:flex;flex-direction:column;gap:12px;min-width:300px}
+.slot{background:var(--panel);border-radius:12px;padding:14px 16px;font-size:20px;font-weight:800;display:flex;align-items:center;gap:10px}
+.slot.empty{color:var(--muted);font-weight:600;border:2px dashed #3a4a6b;background:transparent}
+.result-banner{text-align:center;border-radius:14px;padding:18px;margin-bottom:14px}
+.result-banner.clear{background:linear-gradient(135deg,#1e9b53,#3ccf7a)}
+.result-banner.fail{background:linear-gradient(135deg,#5a1a1d,#a3262b)}
+.result-banner .big{font-size:40px;font-weight:900}
+body.sub .result-banner .big{font-size:26px}
+.note{background:#2c2410;border:1px solid #6b5520;color:#ffe9a8;border-radius:10px;padding:10px 14px;margin-bottom:12px}
+
+/* ===== サブ ===== */
+body.sub .page{max-width:520px;padding:10px}
+.sub-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;font-weight:700;margin-bottom:8px}
+.role-banner{border-radius:10px;padding:8px 10px;text-align:center;font-size:18px;font-weight:900;margin-bottom:8px}
+.role-banner.giver{background:var(--accent);color:#1a1a1a}
+.role-banner.guesser{background:#2f7de1;color:#fff}
+.panel{background:var(--panel);border-radius:12px;padding:12px;margin-top:10px;font-size:14px;line-height:1.6}
+.panel .ng{background:#fff;color:#222;border-radius:8px;padding:8px 10px;margin-top:8px}
+.panel .ng b{color:#c0392b}
+.bottom-btns{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+.bottom-btns button{padding:14px;font-size:17px}
+.p-center{text-align:center;padding:40px 16px}
+.legend{display:flex;gap:10px;justify-content:center;font-size:13px;margin:6px 0 10px;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px}
+.spinner{width:40px;height:40px;border:4px solid #3a4a6b;border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== モーダル・トースト ===== */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal{background:#fff;color:#1d1d1f;border-radius:14px;padding:20px;max-width:460px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.modal h3{margin-bottom:10px}
+.modal p{margin:6px 0}
+.modal-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.modal button{background:#e3e6ec;color:#1d1d1f}
+.modal button.primary{background:var(--accent)}
+.modal button.danger{background:var(--danger);color:#fff}
+.modal .confirm-word{font-size:28px;font-weight:900;text-align:center;margin:10px 0}
+.swap-cand{font-size:30px;font-weight:900;text-align:center;margin:12px 0;padding:12px;background:#f4f1e4;border-radius:10px}
+.chk{display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-size:14px;cursor:pointer}
+.chk input{margin-top:3px;transform:scale(1.2)}
+#toast{position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:200;pointer-events:none;display:flex;flex-direction:column;gap:8px;align-items:center;width:max-content;max-width:92vw}
+.toast{background:#222c44;color:#fff;border-radius:12px;padding:10px 18px;font-weight:800;box-shadow:0 6px 20px rgba(0,0,0,.4);animation:tin .2s ease-out;text-align:center}
+.toast.clear{background:var(--clear);color:#222}
+.toast.neutral{background:#5b6475}
+.toast.black{background:#000;border:2px solid var(--danger)}
+.toast.next{background:#2f7de1}
+body.host .toast.big{font-size:36px;padding:18px 36px;margin-top:30vh}
+@keyframes tin{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+/* ===== 管理 ===== */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 10px;border-bottom:1px solid #33415f;text-align:left}
+th{color:var(--muted);font-weight:700;white-space:nowrap}
+td:nth-child(-n+3){white-space:nowrap}
+.table-wrap{overflow-x:auto}
+.tag{display:inline-block;border-radius:6px;padding:2px 8px;font-weight:800;font-size:13px}
+.tag.clear{background:var(--ok);color:#10301c}
+.tag.fail{background:var(--danger);color:#fff}
+.ex-list{display:flex;flex-wrap:wrap;gap:8px}
+.ex-item{background:var(--panel2);border-radius:8px;padding:6px 8px 6px 12px;display:inline-flex;align-items:center;gap:8px;font-weight:700}
+.stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+@media (max-width:700px){ .status-bar,.stats4{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+   ワードデュオ（2人協力ワードゲーム）
+   ・パラメータなし     … メイン（PC：QR表示・盤面・進行）
+   ・?room=XXXX        … サブ（スマホ：A/B）
+   ・?mode=admin       … 管理ページ（除外単語・クリア履歴・単語使用状況）
+   ========================================================= */
+const GAME_TITLE = 'ワードデュオ';
+const MAX_TURN = 9;
+const ROOM_PREFIX = 'wduo-';
+const DEFAULT_WORDS = ["アーモンド","アイコン","アイス","アイテム","アイドル","アウトドア","青色","赤色","アカウント","赤ちゃん","秋","アクアリウム","悪魔","悪夢","憧れ","アザラシ","アスリート","汗","アタック","あだ名","アドレス","穴","アナウンス","アプリ","アフリカ","アマゾン","網","飴","アリ","アルバイト","アレンジ","アロマ","泡","暗記","暗号","安全","アンテナ","アンパンマン","イカ","いかだ","イクラ","居酒屋","移籍","遺跡","イタズラ","異端","イチゴ","一周","一瞬","田舎","犬","イラスト","入れ歯","印刷","隕石","インターネット","インタビュー","インドア","インプット","Wikipedia","ウイルス","ウェア","浮き輪","うさぎ","嘘","宇宙","腕時計","うどん","うなぎ","ウニ","海","梅干し","浦島太郎","占い","潤い","うわさ","運試し","運転手","運動会","エアコン","映画","営業","英語","エイプリルフール","笑顔","駅","エクササイズ","エコ","SF","エスカレーター","エスパー","エナジードリンク","エネルギー","エビ","絵本","エリア","エレベーター","円","炎上","遠足","エンディング","鉛筆","煙幕","応援団","王様","往復","大食い","オークション","オーケストラ","オーダー","オーディション","オーバー","オーロラ","お金持ち","おかゆ","沖縄","お経","おごり","お酒","おじいちゃん","お正月","お嬢様","お酢","お寿司","おせち料理","オセロ","お宝","おつかい","おつまみ","お手軽","おでん","大人買い","乙女","おにぎり","鬼ごっこ","斧","おばあちゃん","お化け","お姫様","お風呂","お坊さん","おまけ","お祭り","おみくじ","お土産","オムライス","思い出","親子","親孝行","お屋敷","親指","折り紙","オリンピック","オレンジ","お笑い","恩返し","温泉","温度","オンライン","お絵描き","お好み焼き","お祝い","お地蔵様","お茶漬け","お年玉","お洒落","カーテン","カード","カーナビ","会議","がいこつ","怪談","階段","懐中電灯","回転","怪盗","怪物","カイロ","カウンター","カウントダウン","画家","科学","かかと","輝き","かき","鍵","かき氷","格闘家","楽譜","かぐや姫","確率","かくれんぼ","賭け","傘","かさぶた","家事","火事","歌手","カスタマイズ","カステラ","風邪","化石","ガソリン","肩車","肩こり","カタツムリ","形見","カタログ","花壇","ガチャ","合唱","カッター","カット","カッパ","カップ麺","カニ","カバー","カビ","カフェイン","兜","カブトムシ","花粉","カマキリ","かまくら","かまぼこ","神様","ガムテープ","亀","カメラ","仮面","から揚げ","カラオケ","カラコン","カラス","ガラス","カラフル","カリスマ","かるた","カレー","カレンダー","カロリー","革靴","換気扇","観光地","乾燥","缶詰","乾電池","感動","監督","看板","観覧車","気圧","キーボード","黄色","記号","傷","帰省","キック","喫茶店","切手","キツネ","記念写真","ギフト","木彫り","キムチ","肝試し","ギャグ","キャッチ","キャベツ","キャラメル","キャンセル","キャンプ","休暇","給食","牛丼","給料日","教育","餃子","恐竜","極端","ギリギリ","議論","菌","金魚","金庫","銀行","禁止","金属","筋トレ","筋肉","金髪","クイズ","空気清浄機","空港","偶然","空中","クーポン","クギ","串","くしゃみ","くじ引き","口紅","靴下","クッション","グッズ","グミ","雲","クラウド","グラフ","栗","クリエイター","クリスマス","グルメ","クレヨンしんちゃん","黒","クワガタ","経営","経験値","掲示板","芸人","景品","ゲームセンター","消しゴム","ケチャップ","血液","欠陥","決済","剣","幻覚","玄関","研究","健康","原始人","懸賞","ケンタッキー","権利","けん玉","コアラ","コイン","更衣室","公園","効果音","豪華客船","攻撃","高校","工作","格子","工事","高速道路","交番","コウモリ","紅葉","合流","ゴーグル","コート","コーヒー","コーラ","氷","ゴール","呼吸","告白","個人情報","こたつ","骨董品","古典","ことわざ","小判","ごはん","コピー","ごぼう","コマ","ゴミ","ゴリラ","ゴルフ","コンクリート","コンタクト","コンテスト","コントロール","コンパクト","コンパス","昆布","ご褒美","サーキット","サーフィン","災害","再生","サイン","サウナ","坂","鮭","サザエさん","刺身","座席","サッカー","札束","さつまいも","砂糖","砂漠","サビ","サブスク","サプライズ","サプリメント","サポーター","サボテン","サラダ","サラリーマン","ザリガニ","猿","三角形","サングラス","珊瑚礁","酸素","サンタクロース","サンダル","サンドイッチ","サンプル","散歩","サンマ","三輪車","CM","シーソー","CD","シール","シールド","ジェットコースター","塩","資格","試験","四国","地獄","自作","磁石","姿勢","施設","自宅","シチュー","実験","湿布","辞典","自転車","自動販売機","シフト","脂肪","自慢","ジム","〆切","指紋","ジャガイモ","蛇口","社長","シャツ","シャッフル","しゃぶしゃぶ","シャボン玉","ジャム","ジャングルジム","じゃんけん","ジャンプ","絨毯","終電","充電","柔道","十二支","修行","祝日","宿題","出勤","出張","趣味","手裏剣","順番","ショウガ","小学校","将棋","定規","乗客","賞金","証拠","上司","小説","商店街","消毒","勝負","醤油","常連","小籠包","昭和","ショートカット","ショートケーキ","職業","職人","ショック","ショッピング","白髪","白雪姫","しりとり","視力","シルバー","白","シロップ","進化","新幹線","新記録","シングル","信号","深呼吸","新婚","新作","神社","新人","新生活","親戚","新鮮","心臓","シンデレラ","振動","新品","シンプル","深夜","心理戦","スイーツ","水泳","水族館","スイッチ","水筒","水分","睡眠","推理","スイング","スーツ","スーパー","スキー","スキップ","スキャンダル","スキル","すき焼き","スクープ","スケート","スコップ","スタート","スタンド","ステーキ","ステッカー","ステッキ","ストイック","ストーブ","ストック","ストレス","砂浜","スピーカー","スピーチ","滑り台","スマホ","相撲","スライム","スランプ","スロット","声援","星座","青春","精神","成長","正方形","生命","声優","整列","セーブ","セール","咳","世間話","説教","絶景","接続","接待","接着剤","節約","背中","背表紙","セブンイレブン","セミ","セミナー","セメント","ゼリー","セロテープ","全開","選挙","センサー","戦士","先生","センター","扇風機","専門家","戦略","草原","倉庫","創作","掃除","そうめん","素材","卒業","蕎麦","ソファ","ソフト","空","ゾロ目","ターゲット","ダーツ","ダイエット","体温計","太鼓","大根","体質","体重計","体操","台所","代表","タイピング","台風","タイマー","タイマン","タイムマシン","タイヤ","たい焼き","ダイヤモンド","ダウンロード","タオル","駄菓子","宝くじ","滝","薪","焚き火","タクシー","竹","タコ","たこ焼き","出汁","卓球","盾","七夕","ダニ","多人数","タヌキ","タバコ","タピオカ","タブー","食べ放題","たらこ","タレ","団子","たんこぶ","誕生日","団体","タンバリン","ダンベル","段ボール","たんぽぽ","暖炉","チアリーダー","チェーン","チェリー","地下","力持ち","チケット","遅刻","地上","父親","ちびまる子ちゃん","チャック","チャット","ちゃぶ台","中学校","中継","注射","駐車場","抽選","チューリップ","彫刻","長寿","挑戦","貯金","ちりとり","珍味","ツアー","通帳","通販","通訳","通路","疲れ","月","漬物","つっぱり","ツナ","積み木","爪","梅雨","釣り","出会い","定食","ディスク","ディズニー","ティッシュ","ディナー","テーブル","テーマ","テーマパーク","デザイン","手作り","鉄板","鉄棒","テトリス","手のひら","デパート","手袋","出前","出店","デラックス","手料理","テレパシー","テレビ番組","テレポート","電気","電器屋","天空の城ラピュタ","天国","天才","天使","電子書籍","電車","天井","転職","伝説","電卓","電池","テント","天然","電話","ドア","トイレ","唐辛子","豆腐","動物園","冬眠","透明","とうもろこし","ドーピング","ドーム","読書","トゲ","登山","都市","ドッキリ","ドッジボール","トップ","となりのトトロ","跳び箱","ドライバー","ドライブ","トラウマ","ドラえもん","ドラキュラ","ドラゴンクエスト","ドラゴンボール","トラック","トラブル","ドラマ","トランシーバー","トランプ","ドリアン","トリガー","努力","トレーナー","トレーニング","ドロー","とろみ","どんぐり","トンネル","丼","ナイフ","流れ","流れ星","夏","納豆","夏休み","鍋","波","習い事","縄跳び","南極","南国","偽物","煮干し","煮物","入院","入学","ニュース","入浴剤","ニワトリ","人気者","人魚","にんじん","ニンニク","抜け殻","ネギ","寝癖","猫","寝言","ねじ","熱","ネックレス","熱血","ネットカフェ","粘り","寝坊","年賀状","粘土","年末","ノイズ","農業","濃厚","のり","歯","パーフェクト","パーマ","廃墟","俳句","バイク","歯医者","配信","ハイテク","パイナップル","ハイブリッド","ハガキ","博士","バカンス","拍手","爆弾","爆発","博物館","歯車","バケツ","箱","ハサミ","橋","箸","ハシゴ","馬車","パジャマ","バジル","バス","パスタ","パスポート","パズル","パソコン","バター","畑","ハチ","罰","パック","バッジ","発射","バット","葉っぱ","発明","ハト","バトル","花火","パニック","派閥","パフェ","ハプニング","バブル","はまぐり","早起き","バランス","針","春","バレリーナ","パン","ハンガー","ハンカチ","パンケーキ","バンザイ","バンジージャンプ","反射","絆創膏","ハンター","パンチ","ハンドル","ハンバーガー","ハンバーグ","ハンマー","ピアノ","ピース","ビー玉","ピーマン","ビーム","ヒール","ビール","ヒーロー","被害","ピカチュウ","ピクニック","飛行機","膝","肘","ビジネス","ピストル","引っ越し","羊","ピッタリ","ヒット曲","人混み","ヒトデ","避難","ビニール","ビビンバ","暇つぶし","ヒマワリ","日焼け","100均","標識","ひよこ","ビリヤード","肥料","昼寝","ヒロイン","ビンゴ","ビンタ","ピンチ","貧乏","ファイナル","ファッション","ファミコン","ファミレス","ファンタジー","風船","フード","封筒","ブーム","ブーメラン","プール","笛","部下","部活","復讐","武将","ブタ","舞台","双子","2人","腹筋","筆","不動産","布団","冬","プライド","フライパン","フライング","ブラシ","フラダンス","ブラック","プラネタリウム","フラミンゴ","プラモデル","フランクフルト","ブランコ","ブランド","フリー","フリーター","ふりかけ","フリスビー","不良","プリン","プリンター","ブレーキ","フレンド","プロ","ブログ","プロテイン","プロレス","ベストセラー","別荘","ペット","ペットボトル","ベルト","ヘルメット","勉強","ペンギン","変身","変装","ペンダント","弁当","望遠鏡","放火","妨害","放課後","ほうき","防災","帽子","防水","包丁","法律","ボウリング","ポーチ","ボーナス","ホームセンター","ボール","ポケベル","ポケモン","保険","星","ポスター","ホタル","墓地","北海道","ポッキー","ボックス","ぼったくり","ホッチキス","ポテトチップス","哺乳瓶","骨","ホラー","ポリシー","本棚","ボンド","ボンベ","本物","マイク","迷子","マイナスイオン","マウス","マガジン","マクドナルド","マグロ","マジック","マシュマロ","マスク","マスコット","マスター","マッサージ","松茸","抹茶","祭り","窓","マナー","マニア","マフラー","魔法","魔法少女","マヨネーズ","マリオ","漫画家","饅頭","マンション","マント","真ん中","満腹","万歩計","みかん","ミキサー","ミシン","水着","水鉄砲","味噌","ミッキーマウス","ミッション","ミミズ","未来","ミルク","昔話","無限","虫歯","無色","無制限","無料","群れ","名言","名刺","名探偵コナン","メイド","名物","迷路","メール","目隠し","メガネ","目覚まし時計","メジャー","メダカ","目玉","メッセージ","メロディー","メロン","免許証","面接","明太子","モアイ","毛布","モーニング","木材","餅","モップ","モニター","ものまね","桃","桃太郎","もやし","モンスター","モンブラン","やかん","焼きそば","焼き鳥","焼肉","野球","約束","矢印","屋台","薬局","屋根","やんちゃ","遊園地","YouTube","郵便局","UFO","湯気","ユニクロ","指先","指輪","ゆるキャラ","妖怪","溶接","幼稚園","幼虫","ヨーグルト","ヨーヨー","ヨーロッパ","ヨガ","欲望","予言","ヨット","呼び鈴","夜更かし","ラーメン","ライオン","ライセンス","ライト","ライフ","ライブ","落書き","ラクダ","ラジオ","ラジコン","ラップ","ラブコメ","ラブレター","ランドセル","ランニング","理科室","力士","リサイクル","リズム","リビング","リフト","リフレッシュ","リメイク","リモコン","流行","リュック","両替","旅行","リンク","ループ","レア","冷蔵庫","冷凍","冷房","レース","レシート","レシピ","レトロ","レンズ","レンタカー","レンタル","レントゲン","老化","ろうそく","ローソン","ログイン","録音","録画","ロケット","ワクチン","輪ゴム","わさび","和食","綿菓子","渡り鳥","輪投げ","ワニ","割引","アイスクリーム","アジ","アメリカ","アルプス","イギリス","イス","イヌ","ウェーブ","ウォッチ","ウサギ","ウシ","ウマ","エイリアン","エース","エジプト","エンジン","オイル","オペラ","オリーブ","オルガン","カエデ","カギ","カジノ","ガス","カナダ","カボチャ","カモ","かわら","カン","カンガルー","キーパー","キウイ","キャプテン","キリン","キング","クイーン","クール","くじ","クジラ","くち","クツ","クマ","クモ","クラッシュ","クラブ","グリーン","クロス","ゲーム","ゴースト","コード","コップ","コミック","ゴム","コンサート","サークル","サーバー","サイクル","サウンド","サギ","サケ","サソリ","サメ","ジェット機","しっぽ","ジャック","シャドウ","ジャングル","シュート","ジョッキ","ショップ","スイカ","スーパーヒーロー","スクリーン","スター","スタジアム","スタッフ","スティック","ステージ","ストライク","ストロー","スナック","スパイ","スパイク","スプリング","スペース","スポット","スリップ","ソウル","ソーダ","タイ","タイガー","ダイス","たいまつ","タイム","ダイヤ","タカ","タグ","タップ","タブレット","タワー","タンス","ダンス","チェコ","チェック","チャージ","チューブ","チョーク","チョコレート","ツメ","つり","ツル","デート","デザート","デッキ","ドイツ","トキ","トライアングル","ドラゴン","ドラフト","トランク","ドリル","ドレス","ドロップ","ナッツ","ニューヨーク","ニンジン","ネクタイ","ネコ","ネズミ","ネット","ノート","ノミ","バー","パーツ","パーティー","ハート","ハード","ハーフ","パイ","パイプ","パイロット","ハウス","パス","ハチミツ","バッテリー","バッファロー","ハム","バラ","パラシュート","ハリウッド","パンク","パンツ","ハンド","バンド","ビート","ビタミン","ヒマラヤ","ピラミッド","ビル","ビン","ファイター","ファイル","ファン","フィギュア","フィルム","フェニックス","フェンス","フォーク","フック","フライ","プラスチック","フランス","プリンセス","プリント","フルート","プレート","ブレス","プレス","ブレンド","ブロック","ペースト","ヘッド","ベッド","ヘリコプター","ベル","ベルリン","ポイント","ホーム","ポール","ポケット","ボス","ポスト","ボタン","ホテル","ボルト","マーク","マーチ","マス","マッチ","マンモス","ミサイル","ミント","ムチ","めざめ","モール","モデル","ヤシ","ユニコーン","ライター","ライン","ラウンド","ラケット","ランプ","リムジン","リング","リンゴ","ルート","ルーム","ルール","ルーレット","レーザー","レジェンド","レベル","レモン","ローマ","ロック","ロボット","ロンドン","ワシ","医者","衛星","王冠","億万長者","科学者","火","海賊","角","看護師","顔","騎士","救急車","巨人","魚","教会","教師","金","空気","軍隊","警察","工場","幸運","港","死","糸","紙","時間","車","森","水","水星","雪","雪だるま","川","戦争","洗濯","潜水艦","船","掃除機","葬儀屋","足","大使館","中国","昼","調理師","泥棒","鉄","鉄道","東京","毒","日記","忍者","板","皮","美人","病院","病気","浜","風","兵士","壁","弁護士","宝","魔女","密売人","命","木星","木綿","目","夜","遊び","列","アーサー王","アイスランド","アインシュタイン","アポロ","アラスカ","イースター","いかさま師","イカリ","イモ","インク","ヴァンパイア","ヴィーナス","ウィザード","ウィルス","ウール","ウエイトレス","ウッド","ウミガメ","ウメ","エデン","オアシス","オウム","カウボーイ","カエサル","カエル","カッコウ","カフェ","カミソリ","ガム","カモメ","カンフー","ギア","キス","きずな","ギター","きもの","キャッチャー","ギャング","キルト","クォーター","クシ","くすり","クラゲ","クリーニング","クリスタル","クレオパトラ","ケーキ","ケーブル","ケンカ","コーチ","コーン","コケ","コロンブス","コンピューター","サトウ","サドル","サハラ","さび","サル","サルサ","サロン","サンタ","シート","ジャッジ","シャワー","ジャンヌ・ダルク","ジャンパー","シャンプー","ジュース","シュレッダー","ジョーカー","ジョッキー","スープ","スクラッチ","スタンプ","ストーリー","ストリート","スナップ","スピリット","スフィンクス","スプーン","スプレー","スミレ","スムージー","スリッパ","セイウチ","ゾウ","ソリ","ゾンビ","ダイコン","ダイズ","タキシード","ダッシュ","タトゥー","タマネギ","タンク","チーズ","チーム","チップ","チュチュ","チョウ","つばさ","ツバメ","つや","ディレクター","テキサス","デスク","デルタ","トースト","どくろ","トナカイ","ドライヤー","ドラム","トリック","ドル","トルネード","ドレッシング","トロール","ドローン","どんぶり","ナイロン","ナポレオン","ナマケモノ","におい","ニュートン","ノア","ノコギリ","のぞみ","バーベキュー","パール","バイオリン","バイキング","はしご","バスケット","パチンコ","バッタ","パッド","バナナ","パプリカ","パペット","パレード","バレンタイン","ハロウィン","ハワイ","パンダ","ピーナッツ","ビキニ","ヒゲ","ピザ","ビスケット","ビッグバン","ピッチャー","ヒット","ひも","ヒョウ","フィーバー","ブーツ","フォーム","ブラインド","ブラジャー","ブラジル","ブラックホール","ブリキ","ブルース","ベーコン","ページ","ベース","ペダル","ヘビ","ベビー","ヘラクレス","ペン","ペンキ","ペンタゴン","ベンチ","ホイッスル","ポーカー","ボクサー","ほこり","ポップコーン","ホメロス","ボリューム","ポロ","マイル","マグマ","マジシャン","マスタード","マツ","マニキュア","マラカス","マラソン","ミイラ","ミス","ミノタウロス","メーター","メモリー","もち","モナリザ","モヒカン","モモ","ヤギ","ライフル","ラム","ランチ","リーダー","リス","リュックサック","レール","レコード","レター","レモネード","レンガ","ロード","ロープ","ロシア","ロデオ","ワゴン","愛","悪","案山子","稲妻","隠れ家","宇宙飛行士","厩舎","運河","煙","屋上","温室","化粧","家","火山","花嫁","花婿","蚊","海岸","灰","貝殻","鎧","巻物","患者","旗","騎馬武者","鬼","議員","鏡","襟","刑務所","兄弟","結婚式","剣道","絹","光線","洪水","鋼","国","砂","鎖","座布団","財布","雑誌","賛美歌","寺","時計","時計台","耳","車いす","手芸","十字軍","小屋","小銭","床","沼","城","蒸気","唇","真鍮","神経","人形","人狼","吹雪","聖徳太子","石けん","石灰","雪崩","戦艦","草","霜","足軽","太陽","大学","探偵","炭酸","鍛冶屋","弾丸","知事","地球","地震","地図","聴診器","庭","泥","電球","電子レンジ","刀","豆","逃亡","陶芸","洞窟","虹","燃料","脳","農園","農家","拍車","帆","美女","鼻","氷河","氷河期","秒","風車","風呂","沸騰","分","粉","平","平和","米","母","宝石商","本","盆栽","魔人","妹","枕","味","夢","霧","毛","木こり","野菜","勇者","葉","雷","嵐","涙","脇","湾","彗星"];
+
+const LS = { words:'wduo_words', used:'wduo_used', excluded:'wduo_excluded', history:'wduo_history', state:'wduo_host_state', room:'wduo_room' };
+const SS_PID='wduo_pid', SS_NAME='wduo_name';
+
+const params = new URLSearchParams(location.search);
+const MODE = params.get('mode')==='admin' ? 'admin' : (params.get('room') ? 'sub' : 'host');
+document.body.classList.add(MODE);
+
+/* ---------- 共通ユーティリティ ---------- */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+function other(s){ return s==='A'?'B':'A'; }
+function lsGet(k, def){ try{ const v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ alert('ブラウザへの保存に失敗しました'); } }
+function fmtDate(t){ const d=new Date(t), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+
+/* 単語の見た目の長さ（半角は細いので0.55文字扱い） */
+function vlen(w){ let n=0; for(const ch of String(w)) n += /[\x20-\x7e]/.test(ch) ? 0.55 : 1; return n; }
+/* 長い単語は真ん中で2行に分ける（メイン：9文字以上／サブ：6文字以上） */
+function wrapAt(){ return MODE==='host' ? 9 : 6; }
+function wordHtml(w){
+  const chars=[...String(w)];
+  if(vlen(w)<wrapAt()) return esc(w);
+  const mid=Math.ceil(chars.length/2);
+  return esc(chars.slice(0,mid).join(''))+'<br>'+esc(chars.slice(mid).join(''));
+}
+function cellFontCss(w){
+  let n=vlen(w);
+  const wrapped = n>=wrapAt();
+  if(wrapped) n=Math.ceil([...String(w)].length/2);   // 1行あたりの文字数
+  if(MODE==='host'){
+    const px = wrapped ? 30 : n<=4?40 : n<=5?34 : n<=6?29 : n<=7?25 : 22;
+    return `min(${px}px, ${(px/11).toFixed(2)}vw)`;
+  }
+  const v = wrapped ? (n<=3?3.6 : n<=4?3.4 : 3.0) : (n<=2?4.8 : n<=3?4.4 : n<=4?3.8 : 3.0);
+  return `min(${v}vw, ${(v*5.2).toFixed(1)}px)`;
+}
+
+/* 盤面HTML（メイン・サブ共通） o = {key, cleared, neutral, selectable, clickable} */
+function boardHtml(board, o){
+  o=o||{};
+  return `<div class="board">${board.map((w,i)=>{
+    const cls=['cell'];
+    const k=o.key?o.key[i]:'n';
+    if(k==='g') cls.push('k-g'); else if(k==='k') cls.push('k-k');
+    const cl=!!(o.cleared&&o.cleared[i]);
+    const ne=!cl && !!(o.neutral&&o.neutral[i]);
+    if(cl) cls.push('is-clear');
+    if(ne) cls.push('is-neutral');
+    if(o.selectable&&o.selectable[i]) cls.push('tappable');
+    if(o.clickable) cls.push('clickable');
+    const badge = cl ? '<span class="badge clear">クリア</span>' : ne ? '<span class="badge neutral">一般</span>' : '';
+    return `<div class="${cls.join(' ')}" data-idx="${i}"><span class="w" style="font-size:${cellFontCss(w)}">${wordHtml(w)}</span>${badge}</div>`;
+  }).join('')}</div>`;
+}
+
+/* モーダル */
+function openModal(html, buttons){
+  const wrap=document.createElement('div');
+  wrap.className='modal-bg';
+  wrap.innerHTML=`<div class="modal">${html}<div class="modal-btns"></div></div>`;
+  const close=()=>wrap.remove();
+  (buttons||[{label:'閉じる'}]).forEach(b=>{
+    const el=document.createElement('button');
+    el.textContent=b.label; if(b.cls) el.className=b.cls;
+    el.onclick=()=>{ if(b.onClick && b.onClick()===false) return; close(); };
+    wrap.querySelector('.modal-btns').appendChild(el);
+  });
+  document.getElementById('modal-root').appendChild(wrap);
+  return {el:wrap, close};
+}
+function closeAllModals(){ document.getElementById('modal-root').innerHTML=''; }
+
+/* トースト */
+function showToast(text, kind, ms){
+  const el=document.createElement('div');
+  el.className='toast '+(kind||'');
+  el.textContent=text;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(()=>el.remove(), ms||2200);
+}
+
+/* スリープ防止 */
+let wakeLock=null;
+async function requestWakeLock(){ try{ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{wakeLock=null;}); }catch(e){} }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && !wakeLock && MODE!=='admin') requestWakeLock(); });
+
+/* ---------- 単語リスト・使用状況・除外 ---------- */
+function getWordList(){
+  const w=lsGet(LS.words, null);
+  const list = Array.isArray(w)&&w.length ? w : DEFAULT_WORDS;
+  return [...new Set(list.map(s=>String(s).trim()).filter(Boolean))];
+}
+function getUsed(){ return new Set(lsGet(LS.used, [])); }
+function setUsed(s){ lsSet(LS.used, [...s]); }
+function getExcluded(){ return new Set(lsGet(LS.excluded, [])); }
+function setExcluded(s){ lsSet(LS.excluded, [...s]); }
+function getHistory(){ return lsGet(LS.history, []); }
+function setHistory(h){ lsSet(LS.history, h); }
+
+/** まだ使っていない（かつ除外されていない）単語。skip に入っている単語も除く */
+function availablePool(skip){
+  const used=getUsed(), ex=getExcluded(), sk=new Set(skip||[]);
+  return getWordList().filter(w=>!used.has(w) && !ex.has(w) && !sk.has(w));
+}
+function usableCount(){ const ex=getExcluded(); return getWordList().filter(w=>!ex.has(w)).length; }
+
+/**
+ * n個の単語を重複なしで選ぶ（使用済みにする）。
+ * 未使用が足りない時は、使用状況のリセットを確認してから、残りを先に使い、足りない分をリセット後の単語から選ぶ。
+ * キャンセル時は null。
+ */
+function pickWords(n, onBoard){
+  onBoard=onBoard||[];
+  let pool=availablePool(onBoard);
+  let first=[];
+  let didReset=false;
+  if(pool.length<n){
+    if(usableCount()-onBoard.length < n){ alert(`使える単語が${n}個に足りません。管理ページで除外単語を減らすか、単語リストを確認してください。`); return null; }
+    const msg = `未使用の単語が残り${pool.length}個しかありません（${n}個必要）。\n\n単語の使用状況をリセットしますか？\n` +
+      (pool.length ? `（残りの${pool.length}個を先に使い、足りない分をリセット後の単語から選びます）` : '');
+    if(!confirm(msg)) return null;
+    first=shuffle(pool);
+    setUsed(new Set());
+    didReset=true;
+    pool=availablePool([...onBoard, ...first]);
+  }
+  const picked=first.concat(shuffle(pool).slice(0, n-first.length));
+  const used=getUsed();
+  picked.forEach(w=>used.add(w));
+  if(didReset) onBoard.forEach(w=>used.add(w));
+  setUsed(used);
+  return shuffle(picked);   // 配置もランダム
+}
+
+/* =========================================================
+   メイン（ホスト）
+   ========================================================= */
+let gs=null, peer=null, myHostId=null;
+const conns={A:null, B:null};
+const connected={A:false, B:false};
+let lastHostEventId=0;
+
+function freshState(){
+  return { phase:'lobby', players:{A:null,B:null}, board:[], keyA:[], keyB:[], cleared:[], neutral:{A:[],B:[]},
+           confirmed:{A:false,B:false}, turn:0, giver:'A', result:null, lastEvent:null, evSeq:0 };
+}
+function genRoomId(){ return ROOM_PREFIX + String(Math.floor(100000+Math.random()*900000)); }
+function joinUrl(){ return myHostId ? location.origin+location.pathname+'?room='+encodeURIComponent(myHostId) : ''; }
+function pname(side){ const p=gs.players[side]; return p?p.name:'（未参加）'; }
+function keyOf(side){ return side==='A'?gs.keyA:gs.keyB; }
+function remainingFor(side){ const k=keyOf(side); let n=0; for(let i=0;i<25;i++) if(k[i]==='g' && !gs.cleared[i]) n++; return n; }
+function remainingTotal(){ let n=0; for(let i=0;i<25;i++) if((gs.keyA[i]==='g'||gs.keyB[i]==='g') && !gs.cleared[i]) n++; return n; }
+function bothJoined(){ return !!(gs.players.A && gs.players.B); }
+
+function initHost(){
+  requestWakeLock();
+  const saved=lsGet(LS.state,null), room=lsGet(LS.room,null);
+  if(saved && room && (saved.players.A||saved.players.B) &&
+     confirm('前回の続きから再開しますか？\n\nOK：続きから再開（同じQRのまま）\nキャンセル：新しい部屋を作る')){
+    gs=Object.assign(freshState(), saved);
+    lastHostEventId = gs.lastEvent ? gs.lastEvent.id : 0;
+    startPeer(room, 0);
+  } else {
+    localStorage.removeItem(LS.state); localStorage.removeItem(LS.room);
+    gs=freshState();
+    startPeer(null, 0);
+  }
+  document.getElementById('app').addEventListener('click', onHostClick);
+  renderHost();
+}
+
+function startPeer(roomId, retry){
+  const id=roomId||genRoomId();
+  if(peer){ try{ peer.destroy(); }catch(e){} }
+  peer=new Peer(id);
+  peer.on('open', pid=>{ myHostId=pid; lsSet(LS.room, pid); saveState(); renderHost(); });
+  peer.on('connection', conn=>{
+    conn.on('data', data=>handleSubMessage(conn, data));
+    conn.on('close', ()=>{
+      const s=conn._side;
+      if(s && conns[s]===conn){ conns[s]=null; connected[s]=false; renderHost(); }
+    });
+  });
+  peer.on('error', err=>{
+    if(err && err.type==='unavailable-id'){
+      // 再開時は前の部屋番号がまだ解放されていないことがあるので数回リトライしてから新番号へ
+      if(roomId && retry<5){ setTimeout(()=>startPeer(roomId, retry+1), 3000); }
+      else { showToast('部屋番号を新しくしました。スマホはQRから入り直してください', '', 5000); startPeer(null, 0); }
+    } else { console.error(err); }
+  });
+  peer.on('disconnected', ()=>{ try{ peer.reconnect(); }catch(e){} });
+}
+
+function saveState(){ lsSet(LS.state, gs); }
+function commit(){ saveState(); syncAll(); renderHost(); }
+function sendTo(side, msg){ const c=conns[side]; if(c && c.open){ try{ c.send(msg); }catch(e){} } }
+function syncAll(){ ['A','B'].forEach(s=>sendTo(s, snapshotFor(s))); }
+
+function setEvent(type, text, extra){
+  gs.evSeq=(gs.evSeq||0)+1;
+  gs.lastEvent=Object.assign({id:gs.evSeq, type, text}, extra||{});
+}
+
+/** サブに送る画面情報（サブ側は毎回これで上書きするだけ） */
+function snapshotFor(side){
+  const ph=gs.phase;
+  const inGame=['keycheck','playing','ended'].includes(ph);
+  const role = ph==='playing' ? (gs.giver===side ? 'giver' : 'guesser') : null;
+  const neutralMark = gs.board.map((_,i)=>!!(gs.neutral.A[i]||gs.neutral.B[i]));
+  return {
+    type:'state', title:GAME_TITLE, phase:ph, side,
+    name: gs.players[side] ? gs.players[side].name : '',
+    partnerName: gs.players[other(side)] ? gs.players[other(side)].name : '',
+    partnerConnected: connected[other(side)],
+    board: inGame ? gs.board : null,
+    key: inGame && role!=='guesser' ? keyOf(side) : null,     // 解読側の時は自分の色を見せない
+    cleared: gs.cleared, neutral: neutralMark,
+    selectable: role==='guesser' ? gs.board.map((_,i)=>!gs.cleared[i] && !gs.neutral[gs.giver][i]) : null,
+    confirmed: !!gs.confirmed[side], partnerConfirmed: !!gs.confirmed[other(side)],
+    turn: gs.turn, maxTurn: MAX_TURN, role,
+    remaining: inGame ? remainingTotal() : 0,
+    result: gs.result, lastEvent: gs.lastEvent
+  };
+}
+
+function handleSubMessage(conn, data){
+  if(!data || !data.type) return;
+  if(data.type==='join'){
+    const pid=String(data.pid||''), name=String(data.name||'').trim().slice(0,12);
+    if(!pid || !name) return;
+    let side=['A','B'].find(s=>gs.players[s] && gs.players[s].pid===pid);
+    if(!side){
+      // タブを閉じて入り直した人：同じニックネームで切断中の人がいれば、その人として復帰
+      side=['A','B'].find(s=>gs.players[s] && gs.players[s].name===name && !connected[s]);
+      if(side) gs.players[side].pid=pid;
+    }
+    if(!side){
+      if(['A','B'].some(s=>gs.players[s] && gs.players[s].name===name)){ try{ conn.send({type:'name_taken'}); }catch(e){} return; }
+      side=['A','B'].find(s=>!gs.players[s]);
+      if(!side){ try{ conn.send({type:'full'}); }catch(e){} return; }
+      gs.players[side]={pid, name};
+    } else {
+      gs.players[side].name=name;
+    }
+    const old=conns[side];
+    conn._side=side; conns[side]=conn; connected[side]=true;
+    if(old && old!==conn){ try{ old.close(); }catch(e){} }
+    if(gs.phase==='lobby' && bothJoined()) enterPrep();
+    commit();
+    return;
+  }
+  const side=conn._side;
+  if(!side || conns[side]!==conn) return;
+  if(data.type==='confirm'){
+    if(gs.phase!=='keycheck') return;
+    gs.confirmed[side]=true;
+    if(gs.confirmed.A && gs.confirmed.B) startPlaying();
+    commit();
+  } else if(data.type==='guess'){
+    handleGuess(side, Number(data.idx));
+  } else if(data.type==='next_turn'){
+    if(gs.phase!=='playing' || data.turn!==gs.turn) return;   // 2人同時に押しても1回だけ進める
+    const by=pname(side);
+    if(advanceTurn()) setEvent('next', `${by}さんが次のターンへ進めました → 第${gs.turn}ターン`);
+    commit();
+  }
+}
+
+/* ----- 進行 ----- */
+function enterPrep(){
+  gs.phase='prep';
+  resetRound();
+  const w=pickWords(25, []);
+  gs.board = w || [];
+}
+function resetRound(){
+  gs.keyA=[]; gs.keyB=[]; gs.cleared=[]; gs.neutral={A:[],B:[]};
+  gs.confirmed={A:false,B:false}; gs.turn=0; gs.result=null;
+}
+/**
+ * 色の配置。各サブ：緑9・黒3。
+ * 共通緑3／共通黒1／A緑・B黒1／A黒・B緑1／A緑のみ5／B緑のみ5／A黒のみ1／B黒のみ1／どちらも色なし7
+ */
+function generateKeys(){
+  const idx=shuffle([...Array(25).keys()]);
+  const A=Array(25).fill('n'), B=Array(25).fill('n');
+  let p=0;
+  const take=(n,a,b)=>{ for(let i=0;i<n;i++){ const c=idx[p++]; A[c]=a; B[c]=b; } };
+  take(3,'g','g'); take(1,'k','k'); take(1,'g','k'); take(1,'k','g');
+  take(5,'g','n'); take(5,'n','g'); take(1,'k','n'); take(1,'n','k');
+  gs.keyA=A; gs.keyB=B;
+}
+function startKeycheck(){
+  if(gs.board.length!==25 || !bothJoined()) return;
+  resetRound();
+  generateKeys();
+  gs.cleared=Array(25).fill(false);
+  gs.neutral={A:Array(25).fill(false), B:Array(25).fill(false)};
+  gs.phase='keycheck';
+  commit();
+}
+function startPlaying(){
+  gs.phase='playing';
+  gs.turn=1;
+  gs.giver=Math.random()<0.5?'A':'B';
+  setEvent('start', `ゲームスタート！ 最初の出題は ${pname(gs.giver)}さん`);
+}
+/** ターンを進める。最終ターンを越えたらゲームオーバー。戻り値：ゲーム継続ならtrue */
+function advanceTurn(){
+  if(gs.turn>=MAX_TURN){ endGame('fail','turn'); return false; }
+  gs.turn++;
+  const nx=other(gs.giver);
+  // 次の出題者の緑がもう残っていない時は、緑が残っている側が続けて出題する
+  if(remainingFor(nx)>0) gs.giver=nx;
+  return true;
+}
+function handleGuess(side, idx){
+  if(gs.phase!=='playing' || side===gs.giver) return;
+  if(!(idx>=0 && idx<25)) return;
+  const giver=gs.giver;
+  if(gs.cleared[idx] || gs.neutral[giver][idx]) return;
+  const word=gs.board[idx], by=pname(side);
+  const k=keyOf(giver)[idx];
+  if(k==='g'){
+    gs.cleared[idx]=true;
+    if(remainingTotal()===0){ endGame('clear'); }
+    else if(remainingFor(giver)===0){
+      if(advanceTurn()) setEvent('clear', `「${word}」クリア！ ${pname(giver)}さんの緑はすべて見つかりました → 第${gs.turn}ターン`, {idx});
+    } else {
+      setEvent('clear', `「${word}」クリア！ 続けて選べます`, {idx});
+    }
+  } else if(k==='k'){
+    endGame('fail','black', idx);
+  } else {
+    gs.neutral[giver][idx]=true;
+    if(advanceTurn()) setEvent('neutral', `「${word}」は一般でした → 第${gs.turn}ターン`, {idx});
+  }
+  commit();
+}
+function endGame(type, reason, idx){
+  gs.phase='ended';
+  const found=15-remainingTotal();
+  gs.result={type, reason:reason||'clear', turn:gs.turn, word: idx!=null ? gs.board[idx] : null, found};
+  if(type==='clear') setEvent('clear', `🎉 ゲームクリア！（第${gs.turn}ターン）`);
+  else if(reason==='black') setEvent('black', `「${gs.board[idx]}」は黒… ゲームオーバー`, {idx});
+  else setEvent('black', `${MAX_TURN}ターンが終了… ゲームオーバー`);
+  const h=getHistory();
+  h.push({ id:uid(), at:Date.now(), result:type, turn:gs.turn, reason:gs.result.reason, word:gs.result.word,
+           found, players:`${pname('A')} ＆ ${pname('B')}` });
+  setHistory(h);
+}
+function playAgain(){
+  gs.phase='prep';
+  resetRound();
+  const w=pickWords(25, []);
+  gs.board = w || [];
+  commit();
+}
+
+/* ----- 単語の入れ替え（準備画面） ----- */
+function nextCandidate(cur){
+  let pool=availablePool(gs.board).filter(w=>w!==cur);
+  if(!pool.length){
+    if(cur!=null){ showToast('ほかの候補がありません'); return null; }
+    if(usableCount()-gs.board.length<=0){ alert('入れ替えに使える単語がありません'); return null; }
+    if(!confirm('未使用の単語がなくなりました。\n単語の使用状況をリセットしますか？')) return null;
+    setUsed(new Set(gs.board));
+    pool=availablePool(gs.board);
+    if(!pool.length){ alert('入れ替えに使える単語がありません'); return null; }
+  }
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+function openSwap(i){
+  if(gs.phase!=='prep') return;
+  const oldW=gs.board[i];
+  let cand=nextCandidate(null);
+  if(cand==null) return;
+  const m=openModal(`
+    <h3>「${esc(oldW)}」を入れ替え</h3>
+    <p class="muted" style="color:#666;font-size:14px">盤面にない単語からランダムに選んでいます</p>
+    <div class="swap-cand" id="cand-word">${esc(cand)}</div>
+    <div style="text-align:center"><button id="btn-reroll">🎲 別の単語にする</button></div>
+    <label class="chk"><input type="checkbox" id="chk-ex"><span>「${esc(oldW)}」を除外リストに入れる<br><small style="color:#666">（今後このゲームで選ばれなくなります。管理ページで確認・解除できます）</small></span></label>
+  `, [
+    {label:'キャンセル'},
+    {label:'入れ替える', cls:'primary', onClick:()=>{
+      if(gs.phase!=='prep' || gs.board[i]!==oldW) return;
+      const ex=m.el.querySelector('#chk-ex').checked;
+      gs.board[i]=cand;
+      const used=getUsed(); used.add(cand); setUsed(used);
+      if(ex){ const e=getExcluded(); e.add(oldW); setExcluded(e); }
+      commit();
+      showToast(`「${oldW}」→「${cand}」に入れ替えました${ex?'（除外リストに追加）':''}`);
+    }}
+  ]);
+  m.el.querySelector('#btn-reroll').onclick=()=>{
+    const c=nextCandidate(cand);
+    if(c!=null){ cand=c; m.el.querySelector('#cand-word').textContent=c; }
+  };
+}
+
+function openQrModal(){
+  if(!myHostId){ showToast('部屋を準備中です'); return; }
+  const m=openModal(`<h3>参加用QRコード</h3><div style="text-align:center"><div class="qrbox" id="qr-modal"></div><div class="url" style="color:#666">${esc(joinUrl())}</div></div>`);
+  new QRCode(m.el.querySelector('#qr-modal'), {text:joinUrl(), width:260, height:260});
+}
+
+function onHostClick(e){
+  const cell=e.target.closest('.cell.clickable');
+  if(cell){ openSwap(Number(cell.dataset.idx)); return; }
+  const b=e.target.closest('[data-act]');
+  if(!b) return;
+  const act=b.dataset.act;
+  if(act==='qr') openQrModal();
+  else if(act==='admin') location.href=location.pathname+'?mode=admin';
+  else if(act==='newroom'){
+    if(!confirm('新しい部屋を作り直しますか？\n（今の進行状況は消え、スマホはQRから入り直しになります）')) return;
+    localStorage.removeItem(LS.state); localStorage.removeItem(LS.room);
+    location.reload();
+  }
+  else if(act==='kick'){
+    const s=b.dataset.side;
+    if(!gs.players[s] || !confirm(`${pname(s)}さん（サブ${s}）を参加者から外しますか？\n（ゲーム中の場合、次に参加した人がサブ${s}を引き継ぎます）`)) return;
+    sendTo(s, {type:'removed'});
+    const c=conns[s]; conns[s]=null; connected[s]=false; gs.players[s]=null;
+    setTimeout(()=>{ try{ c&&c.close(); }catch(err){} }, 300);
+    commit();
+  }
+  else if(act==='pick'){ const w=pickWords(25, []); if(w){ gs.board=w; commit(); } }
+  else if(act==='repick'){
+    if(!confirm('25個の単語をすべて選び直しますか？')) return;
+    const w=pickWords(25, gs.board); if(w){ gs.board=w; commit(); }
+  }
+  else if(act==='start') startKeycheck();
+  else if(act==='toprep'){
+    if(!confirm('準備画面に戻りますか？（今のゲームは記録されません）')) return;
+    gs.phase='prep'; resetRound(); commit();
+  }
+  else if(act==='again') playAgain();
+}
+
+function hostHeader(){
+  const chip=s=>{
+    const p=gs.players[s];
+    if(!p) return `<span class="chip"><span class="side-tag">${s}</span><span class="muted">未参加</span></span>`;
+    return `<span class="chip"><span class="side-tag">${s}</span><span class="dot ${connected[s]?'on':''}"></span>${esc(p.name)}<button class="x" data-act="kick" data-side="${s}" title="参加者から外す">✕</button></span>`;
+  };
+  return `<div class="topbar">
+    <span class="title">${esc(GAME_TITLE)}</span>
+    ${chip('A')}${chip('B')}
+    <span class="spacer"></span>
+    ${gs.phase!=='lobby'?'<button class="small" data-act="qr">📱 QR表示</button>':''}
+    <button class="small" data-act="admin">⚙ 管理ページ</button>
+    <button class="small ghost" data-act="newroom">🆕 新しい部屋</button>
+  </div>`;
+}
+function hostMarks(){ return { cleared:gs.cleared, neutral:gs.board.map((_,i)=>!!(gs.neutral.A[i]||gs.neutral.B[i])) }; }
+
+function renderHost(){
+  const app=document.getElementById('app');
+  if(!gs) return;
+  const ph=gs.phase;
+  let body='';
+  if(ph==='lobby'){
+    const slot=s=>gs.players[s]
+      ? `<div class="slot"><span class="side-tag">サブ${s}</span><span class="dot ${connected[s]?'on':''}" style="width:10px;height:10px;border-radius:50%;background:${connected[s]?'var(--ok)':'#666'}"></span>${esc(gs.players[s].name)}</div>`
+      : `<div class="slot empty"><span class="side-tag">サブ${s}</span>参加待ち…</div>`;
+    body=`<div class="card" style="text-align:center">
+      <h2>スマホでQRコードを読み込んで参加してください（2人）</h2>
+      <div class="lobby">
+        <div>${myHostId?'<div class="qrbox" id="qr"></div>':'<div class="spinner"></div><p>部屋を準備中…</p>'}
+          <div class="url">${esc(joinUrl())}</div></div>
+        <div class="slots">${slot('A')}${slot('B')}
+          <p class="muted" style="font-size:14px;margin:0">2人そろうと自動でゲーム準備画面に進みます</p></div>
+      </div></div>`;
+  }
+  else if(ph==='prep'){
+    const canStart=gs.board.length===25 && bothJoined();
+    body=`<div class="row" style="margin-bottom:12px">
+        <h2 style="margin:0">ゲーム準備</h2>
+        <span class="muted">単語をクリックすると、盤面にない別の単語と入れ替えられます</span>
+        <span class="spacer"></span>
+        ${gs.board.length===25?'<button data-act="repick">🔄 全部選び直す</button>':''}
+        <button class="primary" data-act="start" ${canStart?'':'disabled'}>ゲームスタート ▶</button>
+      </div>
+      ${!bothJoined()?'<div class="note">2人そろっていません。「📱 QR表示」からスマホで参加してください。</div>':''}
+      ${gs.board.length===25 ? boardHtml(gs.board, {clickable:true})
+        : `<div class="card" style="text-align:center"><p>単語がまだ選ばれていません。</p><button class="primary" data-act="pick">単語を25個選ぶ</button></div>`}`;
+  }
+  else if(ph==='keycheck'){
+    const st=s=>`<span class="chip"><span class="side-tag">サブ${s}</span>${esc(pname(s))}：${gs.confirmed[s]?'<b style="color:var(--ok)">確認済み ✓</b>':'<span class="muted">確認中…</span>'}</span>`;
+    body=`<div class="row" style="margin-bottom:12px">
+        <h2 style="margin:0">スマホで自分の色を確認してください</h2>
+        ${st('A')}${st('B')}
+        <span class="spacer"></span>
+        <button class="small ghost" data-act="toprep">◀ 準備に戻る</button>
+      </div>
+      <div class="note">2人とも「確認しました」を押すとゲームスタートです。最初の出題者はランダムで決まります。</div>
+      ${boardHtml(gs.board, hostMarks())}`;
+  }
+  else if(ph==='playing' || ph==='ended'){
+    const g=gs.giver, r=gs.result;
+    const banner = ph==='ended' ? (r.type==='clear'
+        ? `<div class="result-banner clear"><div class="big">🎉 ゲームクリア！</div><div style="font-size:22px;font-weight:800">第${r.turn}ターンでクリアしました</div></div>`
+        : `<div class="result-banner fail"><div class="big">ゲームオーバー</div><div style="font-size:22px;font-weight:800">${
+            r.reason==='black' ? `第${r.turn}ターンで黒（「${esc(r.word)}」）を選びました` : `${MAX_TURN}ターン以内に緑をすべて見つけられませんでした`
+          }（見つけた緑 ${r.found}/15）</div></div>`) : '';
+    body=`${banner}
+      <div class="status-bar">
+        <div class="stat big"><div class="lbl">ターン</div><div class="val">${gs.turn}<small> / ${MAX_TURN}</small></div></div>
+        <div class="stat big"><div class="lbl">残りの緑</div><div class="val">${remainingTotal()}<small> / 15</small></div></div>
+        <div class="stat"><div class="lbl">出題</div><div class="val" style="font-size:22px">${ph==='playing'?`<span class="side-tag">${g}</span> ${esc(pname(g))}`:'—'}</div></div>
+        <div class="stat"><div class="lbl">解読</div><div class="val" style="font-size:22px">${ph==='playing'?`<span class="side-tag">${other(g)}</span> ${esc(pname(other(g)))}`:'—'}</div></div>
+      </div>
+      ${boardHtml(gs.board, hostMarks())}
+      <div class="row" style="margin-top:14px;justify-content:center">
+        ${ph==='ended' ? '<button class="primary" style="font-size:20px;padding:14px 40px" data-act="again">🔁 もう一度遊ぶ</button>'
+                       : '<button class="small ghost" data-act="toprep">中止して準備に戻る</button>'}
+      </div>`;
+  }
+  app.innerHTML=`<div class="page">${hostHeader()}${body}</div>`;
+  const qr=document.getElementById('qr');
+  if(qr && myHostId) new QRCode(qr, {text:joinUrl(), width:260, height:260});
+  // 進行イベントを大きく表示
+  if(gs.lastEvent && gs.lastEvent.id!==lastHostEventId){
+    lastHostEventId=gs.lastEvent.id;
+    showToast(gs.lastEvent.text, 'big '+gs.lastEvent.type, 2600);
+  }
+  if(ph!=='prep') { /* 入れ替えポップアップは準備画面以外では閉じる */ document.querySelectorAll('#modal-root .swap-cand').forEach(el=>el.closest('.modal-bg').remove()); }
+}
+
+/* =========================================================
+   サブ（スマホ）
+   ========================================================= */
+let myPeer=null, myConn=null, myPid='', myName='', sub=null, removedByHost=false;
+let lastSubEventId=null, lastViewKey='', pendingGuess=false;
+
+function initSub(){
+  requestWakeLock();
+  myPid=sessionStorage.getItem(SS_PID) || uid();
+  sessionStorage.setItem(SS_PID, myPid);
+  myName=sessionStorage.getItem(SS_NAME) || '';
+  renderConnecting();
+  document.getElementById('app').addEventListener('click', onSubClick);
+  myPeer=new Peer();
+  myPeer.on('open', ()=>connectToHost(params.get('room')));
+  myPeer.on('disconnected', ()=>{ try{ myPeer.reconnect(); }catch(e){} });
+  myPeer.on('error', err=>console.error(err));
+}
+function connectToHost(roomId){
+  let timer=null;
+  const retry=()=>{ if(removedByHost) return; clearTimeout(timer); timer=setTimeout(tryConnect, 3000); };
+  function tryConnect(){
+    if(removedByHost) return;
+    try{
+      const conn=myPeer.connect(roomId, {reliable:true});
+      myConn=conn;
+      conn.on('open', ()=>{ if(myName) sendJoin(); else renderNameForm(''); });
+      conn.on('data', handleHostMessage);
+      conn.on('close', ()=>{ if(myConn===conn){ renderConnecting(); retry(); } });
+      conn.on('error', ()=>{ if(myConn===conn) retry(); });
+      // 相手が見つからない時は open も close も来ないことがあるので、一定時間で再試行
+      setTimeout(()=>{ if(myConn===conn && !conn.open){ try{ conn.close(); }catch(e){} retry(); } }, 8000);
+    }catch(e){ retry(); }
+  }
+  tryConnect();
+}
+function sendHost(msg){ if(myConn && myConn.open){ try{ myConn.send(msg); return true; }catch(e){} } showToast('通信が切れています。再接続をお待ちください'); return false; }
+function sendJoin(){ sendHost({type:'join', pid:myPid, name:myName}); }
+
+function renderConnecting(){
+  document.getElementById('app').innerHTML=`<div class="page"><div class="p-center"><div class="spinner"></div>
+    <p>メイン画面に接続しています…</p><p class="muted" style="font-size:13px">つながらない場合はそのまま少しお待ちください（自動で再接続します）</p></div></div>`;
+}
+function renderNameForm(err){
+  document.getElementById('app').innerHTML=`<div class="page"><div class="p-center">
+    <h2>${esc(GAME_TITLE)}</h2>
+    <p>ニックネームを入力してください</p>
+    ${err?`<p style="color:var(--danger)">${esc(err)}</p>`:''}
+    <input type="text" id="nick" maxlength="12" placeholder="ニックネーム（12文字まで）" value="${esc(myName)}">
+    <div style="margin-top:14px"><button class="primary" id="btn-join" style="width:100%;padding:14px;font-size:17px">参加する</button></div>
+    <p class="muted" style="font-size:13px">途中で画面を閉じてしまった場合は、同じニックネームで入り直すと復帰できます</p>
+  </div></div>`;
+  document.getElementById('btn-join').onclick=()=>{
+    const v=document.getElementById('nick').value.trim();
+    if(!v){ alert('ニックネームを入力してください'); return; }
+    myName=v; sessionStorage.setItem(SS_NAME, v);
+    sendJoin();
+  };
+}
+function handleHostMessage(data){
+  if(!data) return;
+  if(data.type==='state'){
+    sub=data; pendingGuess=false;
+    renderSub();
+  } else if(data.type==='name_taken'){
+    myName=''; sessionStorage.removeItem(SS_NAME);
+    renderNameForm('そのニックネームは使われています。別のニックネームにしてください');
+  } else if(data.type==='full'){
+    removedByHost=true;
+    document.getElementById('app').innerHTML=`<div class="page"><div class="p-center"><h2>満員です</h2><p>このゲームにはすでに2人が参加しています。</p></div></div>`;
+  } else if(data.type==='removed'){
+    removedByHost=true; sessionStorage.removeItem(SS_NAME); sessionStorage.removeItem(SS_PID);
+    document.getElementById('app').innerHTML=`<div class="page"><div class="p-center"><h2>参加者から外れました</h2><p>もう一度参加する場合はQRコードを読み直してください。</p></div></div>`;
+  }
+}
+
+function subHead(s){
+  const info = (s.phase==='playing'||s.phase==='ended') ? `第${s.turn}/${s.maxTurn}ターン ・ 残りの緑 <b style="color:var(--accent)">${s.remaining}</b>` : '';
+  return `<div class="sub-head"><div><span class="side-tag">サブ${s.side}</span> ${esc(s.name)}</div><div>${info}</div></div>`;
+}
+const NG_HTML = `<div class="ng"><b>※NGヒント</b><br>
+  ・正解ワードそのまま<br>
+  ・外来語にしただけ（例：みかんのヒントとしてオレンジ）<br>
+  ・漢字の読み方を変えたもの（例：金のヒントとして、かね・きん）</div>`;
+
+function renderSub(){
+  const s=sub; if(!s) return;
+  const app=document.getElementById('app');
+  document.title=s.title||GAME_TITLE;
+  // フェーズ・ターン・役割が変わったら開いている確認ポップアップは閉じる
+  const vk=`${s.phase}-${s.turn}-${s.role}`;
+  if(vk!==lastViewKey){ closeAllModals(); lastViewKey=vk; }
+  let html='';
+  if(s.phase==='lobby' || s.phase==='prep'){
+    html=`${subHead(s)}<div class="p-center">
+      <h2>${esc(s.name)}さん、ようこそ！</h2>
+      <p>あなたは <span class="side-tag">サブ${s.side}</span> です。</p>
+      <p>${s.phase==='lobby' ? 'もう1人の参加を待っています…' : 'メイン画面でゲームの準備中です。<br>しばらくお待ちください。'}</p>
+      <p class="muted" style="font-size:14px">相手：${s.partnerName?esc(s.partnerName)+(s.partnerConnected?'':'（切断中）'):'未参加'}</p>
+    </div>`;
+  }
+  else if(s.phase==='keycheck'){
+    html=`${subHead(s)}
+      <div class="role-banner giver">あなたの色を確認してください</div>
+      <div class="legend"><span><i style="background:var(--green)"></i>緑 9</span><span><i style="background:#000;border:1px solid #888"></i>黒 3</span><span><i style="background:#fff"></i>色なし 13</span></div>
+      ${boardHtml(s.board, {key:s.key})}
+      <div class="panel">この色はあなたにしか見えません。相手の画面とは色の配置が違います。<br>
+        <b>緑</b>：相手に当ててほしい単語　<b>黒</b>：相手に選ばれるとゲームオーバー</div>
+      <div class="bottom-btns">
+        ${s.confirmed ? `<button disabled>確認済み ✓ ${s.partnerConfirmed?'':'（相手の確認待ち…）'}</button>`
+                      : '<button class="primary" data-act="confirm">確認しました</button>'}
+      </div>`;
+  }
+  else if(s.phase==='playing'){
+    const giver=s.role==='giver';
+    html=`${subHead(s)}
+      <div class="role-banner ${s.role}">${giver?'あなたは【出題】です':'あなたは【解読】です'}</div>
+      ${boardHtml(s.board, {key:s.key, cleared:s.cleared, neutral:s.neutral, selectable: giver?null:s.selectable})}
+      <div class="panel">${giver
+        ? `相手に<b>「言葉1つ」</b>と<b>「当ててほしい枚数」</b>を伝えてください。${NG_HTML}`
+        : `相手のヒントを聞いて、当てはまると思う単語をタップしてください。<br>
+           <span class="muted">緑ならクリア（続けて選べます）／色なしは一般（ターン終了）／黒はゲームオーバー</span>`}</div>
+      <div class="bottom-btns"><button data-act="next">次のターンへ ▶</button></div>`;
+  }
+  else if(s.phase==='ended'){
+    const r=s.result||{};
+    html=`${subHead(s)}
+      ${r.type==='clear'
+        ? `<div class="result-banner clear"><div class="big">🎉 ゲームクリア！</div><div>第${r.turn}ターンでクリア</div></div>`
+        : `<div class="result-banner fail"><div class="big">ゲームオーバー</div><div>${r.reason==='black'?`黒（「${esc(r.word)}」）を選びました`:`${s.maxTurn}ターンが終了しました`}</div></div>`}
+      ${boardHtml(s.board, {key:s.key, cleared:s.cleared, neutral:s.neutral})}
+      <div class="panel">あなたの色を表示しています。<br>メイン画面で「もう一度遊ぶ」を押すと次のゲームが始まります。</div>`;
+  }
+  app.innerHTML=`<div class="page">${html}</div>`;
+  // 進行イベント（最初の受信時は表示しない＝再接続時に古い通知を出さない）
+  const ev=s.lastEvent;
+  if(lastSubEventId===null){ lastSubEventId = ev ? ev.id : 0; }
+  else if(ev && ev.id!==lastSubEventId){
+    lastSubEventId=ev.id;
+    showToast(ev.text, ev.type, 2600);
+    if(s.phase==='playing' && (ev.type==='next'||ev.type==='neutral'||ev.type==='start'||(ev.type==='clear'&&/ターン$/.test(ev.text)))){
+      setTimeout(()=>showToast(s.role==='giver'?'あなたは【出題】です':'あなたは【解読】です', s.role==='giver'?'clear':'next', 2400), 300);
+    }
+  }
+}
+
+function onSubClick(e){
+  const s=sub; if(!s) return;
+  const cell=e.target.closest('.cell.tappable');
+  if(cell && s.phase==='playing' && s.role==='guesser'){
+    if(pendingGuess) return;
+    const i=Number(cell.dataset.idx), w=s.board[i];
+    openModal(`<h3 style="text-align:center">この単語でよろしいですか？</h3><div class="confirm-word">${esc(w)}</div>`, [
+      {label:'やめる'},
+      {label:'これにする', cls:'primary', onClick:()=>{ if(sendHost({type:'guess', idx:i})) pendingGuess=true; }}
+    ]);
+    return;
+  }
+  const b=e.target.closest('[data-act]');
+  if(!b) return;
+  if(b.dataset.act==='confirm'){ sendHost({type:'confirm'}); }
+  else if(b.dataset.act==='next'){
+    const last = s.turn>=s.maxTurn;
+    openModal(`<h3>次のターンへ進みますか？</h3>
+      <p>${last?'<b style="color:#c0392b">最終ターンです。次へ進むとゲームオーバーになります。</b>':'出題と解読が交代します。'}</p>
+      <p style="font-size:13px;color:#666">※どちらか1人が押せば進みます</p>`, [
+      {label:'キャンセル'},
+      {label:last?'終了する':'次のターンへ', cls:last?'danger':'primary', onClick:()=>{ sendHost({type:'next_turn', turn:s.turn}); }}
+    ]);
+  }
+}
+
+/* =========================================================
+   管理ページ
+   ========================================================= */
+function initAdmin(){
+  document.getElementById('app').addEventListener('click', onAdminClick);
+  renderAdmin();
+}
+function renderAdmin(){
+  const words=getWordList(), used=getUsed(), ex=getExcluded(), hist=getHistory().slice().reverse();
+  const usedCnt=words.filter(w=>used.has(w) && !ex.has(w)).length;
+  const exCnt=words.filter(w=>ex.has(w)).length;
+  const remain=words.length-usedCnt-exCnt;
+  const custom=Array.isArray(lsGet(LS.words,null));
+  const clears=hist.filter(h=>h.result==='clear').length;
+  document.getElementById('app').innerHTML=`<div class="page">
+    <div class="topbar"><span class="title">${esc(GAME_TITLE)} 管理ページ</span><span class="spacer"></span>
+      <button class="primary" data-act="tohost">▶ メイン画面へ</button></div>
+
+    <div class="card">
+      <h2>クリア履歴</h2>
+      <p class="muted" style="margin-top:-6px">全${hist.length}回 ／ クリア ${clears}回 ／ 失敗 ${hist.length-clears}回</p>
+      ${hist.length ? `<div class="table-wrap"><table><thead><tr><th>遊んだ日時</th><th>結果</th><th>ターン</th><th>内容</th><th>見つけた緑</th><th>参加者</th><th></th></tr></thead><tbody>
+        ${hist.map(h=>`<tr>
+          <td>${fmtDate(h.at)}</td>
+          <td><span class="tag ${h.result}">${h.result==='clear'?'クリア':'失敗'}</span></td>
+          <td>第${h.turn}ターン</td>
+          <td>${h.result==='clear'?`第${h.turn}ターンでクリア`:h.reason==='black'?`黒（${esc(h.word||'')}）を選択`:`${MAX_TURN}ターン終了`}</td>
+          <td>${h.found!=null?h.found+' / 15':'—'}</td>
+          <td>${esc(h.players||'')}</td>
+          <td><button class="small ghost" data-act="delhist" data-id="${esc(h.id)}">削除</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="row" style="margin-top:10px"><span class="spacer"></span><button class="small danger" data-act="clearhist">履歴をすべて削除</button></div>`
+      : '<p class="muted">まだ記録がありません。</p>'}
+    </div>
+
+    <div class="card">
+      <h2>除外単語リスト（${exCnt}語）</h2>
+      <p class="muted" style="margin-top:-6px">ここにある単語はゲームで選ばれません。「解除」で再び選ばれるようになります。</p>
+      <div class="row" style="margin-bottom:12px">
+        <input type="text" id="ex-input" placeholder="除外したい単語を入力" style="max-width:320px">
+        <button data-act="addex">除外に追加</button>
+      </div>
+      ${ex.size ? `<div class="ex-list">${[...ex].map(w=>`<span class="ex-item">${esc(w)}<button class="small ghost" data-act="unex" data-w="${esc(w)}">解除</button></span>`).join('')}</div>`
+                : '<p class="muted">除外している単語はありません。</p>'}
+    </div>
+
+    <div class="card">
+      <h2>単語の使用状況</h2>
+      <div class="stats4">
+        <div class="stat"><div class="lbl">単語リスト</div><div class="val">${words.length}</div></div>
+        <div class="stat"><div class="lbl">使用済み</div><div class="val">${usedCnt}</div></div>
+        <div class="stat"><div class="lbl">未使用</div><div class="val" style="color:var(--accent)">${remain}</div></div>
+        <div class="stat"><div class="lbl">除外</div><div class="val">${exCnt}</div></div>
+      </div>
+      <p class="muted">一度選ばれた単語は、すべての単語が一度ずつ使われるまで選ばれません（あと約${Math.floor(remain/25)}ゲーム分）。<br>
+        未使用が25個より少なくなると、ゲーム準備の時にリセットするか確認します。</p>
+      <button class="danger" data-act="resetused">使用状況をリセット</button>
+    </div>
+
+    <div class="card">
+      <h2>単語リスト</h2>
+      <p class="muted" style="margin-top:-6px">現在：${custom?'貼り付けたリスト':'初期リスト（スプレッドシート「単語リスト」A1〜A1850）'}　${words.length}語</p>
+      <p style="font-size:14px">スプレッドシートの単語を更新した時は、A列をコピーして下に貼り付け（1行1単語）→「このリストに置き換える」を押してください。</p>
+      <textarea id="words-input" rows="6" placeholder="1行に1単語"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button data-act="setwords">このリストに置き換える</button>
+        ${custom?'<button class="ghost" data-act="defwords">初期リストに戻す</button>':''}
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>データの引き継ぎ</h2>
+      <p class="muted" style="margin-top:-6px">履歴・除外単語・使用状況・単語リストをJSONファイルで書き出し／読み込みできます（別のPCへの引き継ぎやバックアップ用）。</p>
+      <div class="row">
+        <button data-act="export">⬇ JSON書き出し</button>
+        <button data-act="import">⬆ JSON読み込み</button>
+        <input type="file" id="import-file" accept=".json,application/json" style="display:none">
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('import-file').onchange=onImportFile;
+}
+function onAdminClick(e){
+  const b=e.target.closest('[data-act]'); if(!b) return;
+  const act=b.dataset.act;
+  if(act==='tohost') location.href=location.pathname;
+  else if(act==='delhist'){ if(!confirm('この履歴を削除しますか？')) return; setHistory(getHistory().filter(h=>h.id!==b.dataset.id)); renderAdmin(); }
+  else if(act==='clearhist'){ if(!confirm('クリア履歴をすべて削除しますか？（元に戻せません）')) return; setHistory([]); renderAdmin(); }
+  else if(act==='unex'){ const s=getExcluded(); s.delete(b.dataset.w); setExcluded(s); renderAdmin(); }
+  else if(act==='addex'){
+    const v=document.getElementById('ex-input').value.trim(); if(!v) return;
+    if(!getWordList().includes(v) && !confirm(`「${v}」は単語リストにありません。除外リストに追加しますか？`)) return;
+    const s=getExcluded(); s.add(v); setExcluded(s); renderAdmin();
+  }
+  else if(act==='resetused'){ if(!confirm('単語の使用状況をリセットしますか？\n（すべての単語がまた選ばれるようになります。除外単語はそのままです）')) return; setUsed(new Set()); renderAdmin(); }
+  else if(act==='setwords'){
+    const list=[...new Set(document.getElementById('words-input').value.split(/\r?\n/).map(s=>s.split('\t')[0].trim()).filter(Boolean))];
+    if(list.length<25){ alert('単語が25個未満です'); return; }
+    if(!confirm(`${list.length}語のリストに置き換えますか？`)) return;
+    lsSet(LS.words, list); renderAdmin();
+  }
+  else if(act==='defwords'){ if(!confirm('初期リスト（1850語）に戻しますか？')) return; localStorage.removeItem(LS.words); renderAdmin(); }
+  else if(act==='export'){
+    const data={app:'wduo', version:1, exportedAt:new Date().toISOString(),
+      words:lsGet(LS.words,null), used:lsGet(LS.used,[]), excluded:lsGet(LS.excluded,[]), history:lsGet(LS.history,[])};
+    const blob=new Blob([JSON.stringify(data,null,1)], {type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    const d=new Date(); a.download=`wordduo_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.json`;
+    a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  }
+  else if(act==='import') document.getElementById('import-file').click();
+}
+function onImportFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      if(d.app!=='wduo') throw new Error('format');
+      if(!confirm('読み込んだデータで、今のデータ（履歴・除外単語・使用状況・単語リスト）を上書きしますか？')) return;
+      if(Array.isArray(d.words)&&d.words.length) lsSet(LS.words, d.words); else localStorage.removeItem(LS.words);
+      lsSet(LS.used, Array.isArray(d.used)?d.used:[]);
+      lsSet(LS.excluded, Array.isArray(d.excluded)?d.excluded:[]);
+      lsSet(LS.history, Array.isArray(d.history)?d.history:[]);
+      alert('読み込みました'); renderAdmin();
+    }catch(err){ alert('このファイルは読み込めませんでした'); }
+  };
+  rd.readAsText(f);
+  e.target.value='';
+}
+
+/* ---------- 起動 ---------- */
+if(MODE==='admin') initAdmin();
+else if(MODE==='sub') initSub();
+else initHost();
+</script>
+</body>
+</html>
