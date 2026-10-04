@@ -169,6 +169,7 @@ function other(s){ return s==='A'?'B':'A'; }
 function lsGet(k, def){ try{ const v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){ alert('ブラウザへの保存に失敗しました'); } }
 function fmtDate(t){ const d=new Date(t), p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}/${p(d.getMonth()+1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function fmtDuration(ms){ const s=Math.round(ms/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), sec=s%60; return (h?`${h}時間`:'')+`${m}分${String(sec).padStart(2,'0')}秒`; }
 function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
 
 /* 単語の見た目の長さ（半角は細いので0.55文字扱い） */
@@ -364,8 +365,8 @@ function snapshotFor(side){
   const ph=gs.phase;
   const inGame=['keycheck','playing','ended'].includes(ph);
   const role = ph==='playing' ? (gs.giver===side ? 'giver' : 'guesser') : null;
-  // 一般マークは「解読中の本人が自分でタップして出たもの」だけ表示（相手側・出題中は表示しない）
-  const neutralMark = role==='guesser' ? gs.board.map((_,i)=>!!gs.neutral[gs.giver][i] && !gs.cleared[i]) : null;
+  // 一般マークは常に「今の解読側が自分でタップして出したもの」を表示（出題側にも同じものを表示）
+  const neutralMark = currentNeutral();
   return {
     type:'state', title:GAME_TITLE, phase:ph, side,
     name: gs.players[side] ? gs.players[side].name : '',
@@ -429,8 +430,17 @@ function handleSubMessage(conn, data){
 function enterPrep(){
   gs.phase='prep';
   resetRound();
-  const w=pickWords(25, []);
-  gs.board = w || [];
+  newBoard();
+}
+/**
+ * 新しい25語の盤面を作る。skip の単語（今の盤面など）は選ばない。
+ * キャンセル時は今の盤面のまま（盤面が空なら空のまま）。
+ * boardWords＝この盤面のために使用済みにした単語（入れ替えで使った単語も含む）。履歴削除時に未使用へ戻すのに使う。
+ */
+function newBoard(skip){
+  const w=pickWords(25, skip||[]);
+  if(w){ gs.board=w; gs.boardWords=w.slice(); }
+  return !!w;
 }
 function resetRound(){
   gs.keyA=[]; gs.keyB=[]; gs.cleared=[]; gs.neutral={A:[],B:[]};
@@ -462,6 +472,7 @@ function startPlaying(){
   gs.phase='playing';
   gs.turn=1;
   gs.giver=Math.random()<0.5?'A':'B';
+  gs.startedAt=Date.now();   // クリア時間の計測用（ゲーム中は表示しない）
   setEvent('start', `ゲームスタート！ 最初の出題は ${pname(gs.giver)}さん`);
 }
 /** ターンを進める。最終ターンを越えたらゲームオーバー。戻り値：ゲーム継続ならtrue */
@@ -504,15 +515,17 @@ function endGame(type, reason, idx){
   else if(reason==='black') setEvent('black', `「${gs.board[idx]}」は黒… ゲームオーバー`, {idx});
   else setEvent('black', `${MAX_TURN}ターンが終了… ゲームオーバー`);
   const h=getHistory();
-  h.push({ id:uid(), at:Date.now(), result:type, turn:gs.turn, reason:gs.result.reason, word:gs.result.word,
-           found, players:`${pname('A')} ＆ ${pname('B')}` });
+  const now=Date.now();
+  h.push({ id:uid(), at:now, result:type, turn:gs.turn, reason:gs.result.reason, word:gs.result.word,
+           found, players:`${pname('A')} ＆ ${pname('B')}`,
+           clearMs: type==='clear' && gs.startedAt ? now-gs.startedAt : null,
+           words: (gs.boardWords && gs.boardWords.length ? gs.boardWords : gs.board).slice() });
   setHistory(h);
 }
 function playAgain(){
   gs.phase='prep';
   resetRound();
-  const w=pickWords(25, []);
-  gs.board = w || [];
+  if(!newBoard()) gs.board=[];
   commit();
 }
 
@@ -547,6 +560,7 @@ function openSwap(i){
       const ex=m.el.querySelector('#chk-ex').checked;
       gs.board[i]=cand;
       const used=getUsed(); used.add(cand); setUsed(used);
+      (gs.boardWords=gs.boardWords||gs.board.slice()).push(cand);
       if(ex){ const e=getExcluded(); e.add(oldW); setExcluded(e); }
       commit();
       showToast(`「${oldW}」→「${cand}」に入れ替えました${ex?'（除外リストに追加）':''}`);
@@ -585,15 +599,15 @@ function onHostClick(e){
     setTimeout(()=>{ try{ c&&c.close(); }catch(err){} }, 300);
     commit();
   }
-  else if(act==='pick'){ const w=pickWords(25, []); if(w){ gs.board=w; commit(); } }
+  else if(act==='pick'){ if(newBoard()) commit(); }
   else if(act==='repick'){
     if(!confirm('25個の単語をすべて選び直しますか？')) return;
-    const w=pickWords(25, gs.board); if(w){ gs.board=w; commit(); }
+    if(newBoard(gs.board)) commit();
   }
   else if(act==='start') startKeycheck();
   else if(act==='toprep'){
-    if(!confirm('準備画面に戻りますか？（今のゲームは記録されません）')) return;
-    gs.phase='prep'; resetRound(); commit();
+    if(!confirm('準備画面に戻りますか？\n（今のゲームは記録されず、新しい25個の単語に変わります）')) return;
+    gs.phase='prep'; resetRound(); newBoard(gs.board); commit();
   }
   else if(act==='again') playAgain();
 }
@@ -613,8 +627,12 @@ function hostHeader(){
     <button class="small ghost" data-act="newroom">🆕 新しい部屋</button>
   </div>`;
 }
-/* メインも、今の解読者が自分で出した一般マークだけ表示 */
-function hostMarks(){ return { cleared:gs.cleared, neutral: gs.phase==='playing' ? gs.board.map((_,i)=>!!gs.neutral[gs.giver][i]) : null }; }
+/* 今の解読側が出した一般マーク（クリアで上書きされたマスは除く）。メイン・サブ共通 */
+function currentNeutral(){
+  if(!['playing','ended'].includes(gs.phase)) return null;
+  return gs.board.map((_,i)=>!!gs.neutral[gs.giver][i] && !gs.cleared[i]);
+}
+function hostMarks(){ return { cleared:gs.cleared, neutral:currentNeutral() }; }
 
 function renderHost(){
   const app=document.getElementById('app');
@@ -867,6 +885,14 @@ function onSubClick(e){
 function initAdmin(){
   document.getElementById('app').addEventListener('click', onAdminClick);
   renderAdmin();
+  // メイン画面（別タブ）でゲームが進んだら自動で最新の状態に更新する
+  const refresh=()=>{
+    const keep=['ex-input','words-input'].map(id=>{ const el=document.getElementById(id); return [id, el?el.value:'']; });
+    renderAdmin();
+    keep.forEach(([id,v])=>{ const el=document.getElementById(id); if(el) el.value=v; });
+  };
+  window.addEventListener('storage', e=>{ if(!e.key || [LS.used,LS.excluded,LS.history,LS.words].includes(e.key)) refresh(); });
+  document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') refresh(); });
 }
 function renderAdmin(){
   const words=getWordList(), used=getUsed(), ex=getExcluded(), hist=getHistory().slice().reverse();
@@ -882,12 +908,12 @@ function renderAdmin(){
     <div class="card">
       <h2>クリア履歴</h2>
       <p class="muted" style="margin-top:-6px">全${hist.length}回 ／ クリア ${clears}回 ／ 失敗 ${hist.length-clears}回</p>
-      ${hist.length ? `<div class="table-wrap"><table><thead><tr><th>遊んだ日時</th><th>結果</th><th>ターン</th><th>内容</th><th>見つけた緑</th><th>参加者</th><th></th></tr></thead><tbody>
+      ${hist.length ? `<div class="table-wrap"><table><thead><tr><th>遊んだ日時</th><th>結果</th><th>ターン</th><th>クリア時間</th><th>見つけた緑</th><th>参加者</th><th></th></tr></thead><tbody>
         ${hist.map(h=>`<tr>
           <td>${fmtDate(h.at)}</td>
           <td><span class="tag ${h.result}">${h.result==='clear'?'クリア':'失敗'}</span></td>
           <td>第${h.turn}ターン</td>
-          <td>${h.result==='clear'?`第${h.turn}ターンでクリア`:h.reason==='black'?`黒（${esc(h.word||'')}）を選択`:`${MAX_TURN}ターン終了`}</td>
+          <td>${h.result==='clear' && h.clearMs!=null ? fmtDuration(h.clearMs) : '—'}</td>
           <td>${h.found!=null?h.found+' / 15':'—'}</td>
           <td>${esc(h.players||'')}</td>
           <td><button class="small ghost" data-act="delhist" data-id="${esc(h.id)}">削除</button></td></tr>`).join('')}
@@ -943,12 +969,27 @@ function renderAdmin(){
   </div>`;
   document.getElementById('import-file').onchange=onImportFile;
 }
+/** 削除した履歴の回で使った単語を「未使用」に戻す（単語を記録していない古い履歴は何もしない） */
+function unuseWords(entries){
+  const used=getUsed();
+  entries.forEach(h=>(h.words||[]).forEach(w=>used.delete(w)));
+  setUsed(used);
+}
 function onAdminClick(e){
   const b=e.target.closest('[data-act]'); if(!b) return;
   const act=b.dataset.act;
   if(act==='tohost') location.href=location.pathname;
-  else if(act==='delhist'){ if(!confirm('この履歴を削除しますか？')) return; setHistory(getHistory().filter(h=>h.id!==b.dataset.id)); renderAdmin(); }
-  else if(act==='clearhist'){ if(!confirm('クリア履歴をすべて削除しますか？（元に戻せません）')) return; setHistory([]); renderAdmin(); }
+  else if(act==='delhist'){
+    if(!confirm('この履歴を削除しますか？\n（この回で使った単語は「未使用」に戻ります）')) return;
+    const all=getHistory();
+    unuseWords(all.filter(h=>h.id===b.dataset.id));
+    setHistory(all.filter(h=>h.id!==b.dataset.id)); renderAdmin();
+  }
+  else if(act==='clearhist'){
+    if(!confirm('クリア履歴をすべて削除しますか？（元に戻せません）\n（履歴に残っている回で使った単語は「未使用」に戻ります）')) return;
+    unuseWords(getHistory());
+    setHistory([]); renderAdmin();
+  }
   else if(act==='unex'){ const s=getExcluded(); s.delete(b.dataset.w); setExcluded(s); renderAdmin(); }
   else if(act==='addex'){
     const v=document.getElementById('ex-input').value.trim(); if(!v) return;
