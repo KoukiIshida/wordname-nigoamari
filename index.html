@@ -249,7 +249,7 @@ const DEFAULT_WORDS = ["アーモンド","アイコン","アイス","アイテ�
 const LS = { words:'wname_words', used:'wname_used', excluded:'wname_excluded', history:'wname_history', state:'wname_host_state', room:'wname_room',
              hostGame:'wname_host_game', ngState:'wname_ng_state', settings:'wname_settings' };
 /* ニゴアマリの設定（管理ページで変更） */
-function ngSettings(){ return Object.assign({time:60, predictTime:60, correct:20, penalty:10}, lsGet(LS.settings, {})); }
+function ngSettings(){ return Object.assign({time:60, predictTime:60, correct:20, penalty:10, practiceFirst:false}, lsGet(LS.settings, {})); }
 const SS_PID='wname_pid', SS_NAME='wname_name';
 
 const params = new URLSearchParams(location.search);
@@ -901,7 +901,7 @@ let ng=null;
 const ngConns={};
 
 function ngFresh(){
-  return { phase:'lobby', players:{}, order:[], qNo:0, qId:'', words:[], gameWords:[],
+  return { phase:'lobby', players:{}, order:[], qNo:0, practiceMode:false, qId:'', words:[], gameWords:[],
            assign:{}, answer:0, hints:{}, guesses:{}, endsAt:0, revealStep:0, rv:null,
            doneQ:0, finalStep:0, finalData:null };
 }
@@ -909,6 +909,9 @@ function ngIds(){ return ng.order.filter(p=>ng.players[p]); }
 function ngName(p){ return ng.players[p] ? ng.players[p].name : '（退出）'; }
 function ngOnline(p){ const c=ngConns[p]; return !!(c && c.open); }
 function ngWordCount(){ return ngIds().length*2+1; }
+/* 例題（管理ページで「1問目を例題にする」ON の時の1問目）。得点は合計に入れず、問題数にも数えない */
+function ngIsPractice(){ return !!ng.practiceMode && ng.qNo===1; }
+function ngQLabel(){ return ngIsPractice() ? '例題' : `第${ng.practiceMode ? ng.qNo-1 : ng.qNo}問`; }
 function ngCommit(){ saveState(); ngSyncAll(); renderHost(); }
 function ngSyncAll(){ Object.keys(ngConns).forEach(p=>{ const c=ngConns[p]; if(c && c.open && ng.players[p]){ try{ c.send(ngSnapshotFor(p)); }catch(e){} } }); }
 
@@ -952,6 +955,7 @@ function ngNewQuestion(){
   if(ngIds().length<NG_MIN_PLAYERS){ alert(`${NG_MIN_PLAYERS}人以上いないと始められません`); return false; }
   const w=pickWords(ngWordCount(), []);
   if(!w) return false;
+  if(ng.qNo===0) ng.practiceMode=!!ngSettings().practiceFirst;   // ゲーム開始時の設定で「1問目＝例題」を決める
   ng.qNo++; ng.qId=uid(); ng.words=w; ng.gameWords.push(...w);
   ng.assign={}; ng.hints={}; ng.guesses={}; ng.answer=0; ng.rv=null; ng.revealStep=0; ng.endsAt=0;
   ng.phase='prep';
@@ -989,17 +993,17 @@ function ngComputeReveal(){
     else if(r.guess!=null){ const o=owner(r.guess); if(o) pens.push({from:r.pid, num:r.guess, owner:o}); }
   });
   pens.forEach(x=>{ const r=rows.find(r=>r.pid===x.owner); if(r) r.loss+=st.penalty; });
-  return { rows, pens, correctPts:st.correct, penaltyPts:st.penalty, appliedCorrect:false, appliedPenalty:false };
+  return { rows, pens, correctPts:st.correct, penaltyPts:st.penalty, appliedCorrect:false, appliedPenalty:false, practice:ngIsPractice() };
 }
 /** 結果発表の「次へ」：0=全員の予想 → 1=正解発表（正解者に加点） → 2=割り振り公開（誤答で書かれた人に減点） */
 function ngRevealNext(){
   if(ng.phase!=='reveal' || ng.revealStep>=2) return;
   ng.revealStep++;
-  if(ng.revealStep===1 && !ng.rv.appliedCorrect){
+  if(ng.revealStep===1 && !ng.rv.appliedCorrect && !ng.rv.practice){
     ng.rv.rows.forEach(r=>{ if(r.gain && ng.players[r.pid]) ng.players[r.pid].score+=r.gain; });
     ng.rv.appliedCorrect=true;
   }
-  if(ng.revealStep===2 && !ng.rv.appliedPenalty){
+  if(ng.revealStep===2 && !ng.rv.appliedPenalty && !ng.rv.practice){
     ng.rv.rows.forEach(r=>{ if(r.loss && ng.players[r.pid]) ng.players[r.pid].score-=r.loss; });
     ng.rv.appliedPenalty=true;
   }
@@ -1049,7 +1053,7 @@ function ngOnAction(act, b){
     if(ng.phase!=='predict') return;
     const un=Object.keys(ng.assign).filter(p=>ng.guesses[p]==null).length;
     if(un && !confirm(`まだ予想を送っていない人が${un}人います。結果発表に進みますか？`)) return;
-    ng.rv=ngComputeReveal(); ng.revealStep=0; ng.doneQ++; ng.phase='reveal'; ngCommit();
+    ng.rv=ngComputeReveal(); ng.revealStep=0; if(!ngIsPractice()) ng.doneQ++; ng.phase='reveal'; ngCommit();
   }
   else if(act==='ng-rnext') ngRevealNext();
   else if(act==='ng-nextq'){ if(ngNewQuestion()) ngCommit(); }
@@ -1098,7 +1102,7 @@ function ngHeader(){
   return `<div class="topbar">
     <span class="title">ニゴアマリ</span>
     <span class="chip">参加者 ${ids.length}人</span>
-    ${ng.qNo?`<span class="chip">第${ng.qNo}問</span>`:''}
+    ${ng.qNo?`<span class="chip">${ngQLabel()}</span>`:''}
     <span class="spacer"></span>
     ${ng.phase!=='lobby'?'<button class="small" data-act="qr">📱 QR表示</button>':''}
     ${commonHeaderBtns()}
@@ -1139,7 +1143,7 @@ function renderNgHost(){
   else if(ph==='prep'){
     const mismatch=ng.words.length!==ngWordCount();
     body=`<div class="row" style="margin-bottom:8px">
-        <h2 style="margin:0">第${ng.qNo}問 準備</h2>
+        <h2 style="margin:0">${ngQLabel()} 準備</h2>
         <span class="muted">単語をクリックすると、別の単語と入れ替えられます</span>
         <span class="spacer"></span>
         <button data-act="ng-repick">🔄 全部選び直す</button>
@@ -1153,7 +1157,7 @@ function renderNgHost(){
   else if(ph==='hint' || ph==='predict'){
     const isHint=ph==='hint';
     body=`<div class="row" style="margin-bottom:8px">
-        <h2 style="margin:0">第${ng.qNo}問　${isHint?'ヒント入力中':'予想フェイズ'}</h2>
+        <h2 style="margin:0">${ngQLabel()}　${isHint?'ヒント入力中':'予想フェイズ'}</h2>
         <span class="spacer"></span>
         ${isHint?'<button class="primary" data-act="ng-predict">予想フェイズへ ▶</button>':'<button class="primary" data-act="ng-reveal">結果発表 ▶</button>'}
       </div>
@@ -1175,12 +1179,12 @@ function renderNgHost(){
       const nc=rv.rows.filter(r=>r.correct).length;
       panel=`<div class="answer-banner"><div class="lbl">正解は…</div>
           <div class="ans"><span class="numtag big">${ng.answer}</span><span class="answord">${esc(ngWordOf(ng.answer))}</span></div>
-          <div class="sub">${nc?`正解者 ${nc}人（+${rv.correctPts}点）`:'正解者はいませんでした'}</div></div>
+          <div class="sub">${nc?`正解者 ${nc}人${rv.practice?'（例題のため得点なし）':`（+${rv.correctPts}点）`}`:'正解者はいませんでした'}</div></div>
         <div class="rv-cards">${rv.rows.map(r=>`<div class="rv-card ${r.correct?'correct':'wrong'}">
           <div class="rv-name">${esc(r.name)}</div>
           <div class="rv-hint">ヒント「${esc(r.hint)||'—'}」</div>
           <div class="rv-guess">${r.guess!=null?ngNumTag(r.guess):'<span class="muted">未回答</span>'}</div>
-          ${r.correct?`<div class="rv-pt plus">⭕ 正解 +${r.gain}点</div>`:''}</div>`).join('')}</div>
+          ${r.correct?`<div class="rv-pt plus">⭕ 正解${rv.practice?'':` +${r.gain}点`}</div>`:''}</div>`).join('')}</div>
         <div class="row" style="justify-content:center;margin-top:16px"><button class="primary big-btn" data-act="ng-rnext" data-enter>数字の割り振りを見る ▶</button></div>`;
     } else {
       // 誤答で書かれた数字の持ち主ごとにまとめる
@@ -1193,6 +1197,7 @@ function renderNgHost(){
             <div class="muted" style="font-size:14px">→ ${esc(ngName(o))}さんの数字だったため、書かれた回数 × ${rv.penaltyPts}点のペナルティ</div></div>`).join('')
         : '<div class="pen-none">誤答によるペナルティはありません</div>';
       panel=`<h2 class="rv-title">数字の割り振り</h2>
+        ${rv.practice?'<div class="tie-note">例題のため、得点は合計に入りません（本番の第1問から加算されます）</div>':''}
         <div class="table-wrap"><table class="assign-table"><thead><tr><th>名前</th><th>割り振られた数字</th><th>予想</th><th>今回</th><th>合計</th></tr></thead><tbody>
           ${rv.rows.map(r=>{ const d=r.gain-r.loss; return `<tr class="${r.correct?'ok':''} ${r.loss?'pen':''}">
             <td><b>${esc(r.name)}</b></td>
@@ -1203,8 +1208,8 @@ function renderNgHost(){
         </tbody></table></div>
         <div class="pen-box">${penHtml}</div>
         <div class="row" style="justify-content:center;margin-top:16px;gap:14px">
-          <button class="ghost" data-act="ng-final">ゲーム終了（最終結果発表へ）</button>
-          <button class="primary big-btn" data-act="ng-nextq" data-enter>次の問題へ ▶</button></div>`;
+          ${rv.practice?'':'<button class="ghost" data-act="ng-final">ゲーム終了（最終結果発表へ）</button>'}
+          <button class="primary big-btn" data-act="ng-nextq" data-enter>${rv.practice?'本番スタート（第1問へ）':'次の問題へ'} ▶</button></div>`;
     }
     body=`${panel}<div style="margin-top:18px">${ngWordsHtml({compact:true, answer: st>=1?ng.answer:null})}</div>`;
   }
@@ -1243,7 +1248,7 @@ function ngSnapshotFor(p){
   const fd=ng.finalData;
   return {
     type:'state', game:'nigoamari', phase:ng.phase, name:ngName(p), score:ng.players[p].score,
-    qNo:ng.qNo, qId:ng.qId, total:ng.words.length, inRound, myNums: inRound ? ng.assign[p] : null,
+    qNo:ng.qNo, qLabel:ngQLabel(), practice:ngIsPractice(), qId:ng.qId, total:ng.words.length, inRound, myNums: inRound ? ng.assign[p] : null,
     remainingMs: ['hint','predict'].includes(ng.phase) ? Math.max(0, ng.endsAt-Date.now()) : 0,
     myHint: ng.hints[p]||'', myGuess: ng.guesses[p]!=null ? ng.guesses[p] : null,
     hints: ng.phase==='predict' ? parts.map(q=>({id:q, name:ngName(q), hint:ng.hints[q]||'', me:q===p})) : null,
@@ -1432,7 +1437,7 @@ function renderNgSub(){
   // 入力途中の文字・選択を再描画で消さない
   const keep={}; app.querySelectorAll('[data-keep]').forEach(el=>{ keep[el.id]=el.value; });
   const focusId=document.activeElement && document.activeElement.id;
-  const head=`<div class="sub-head"><div>${esc(s.name)}　<span class="muted">${s.score}点</span></div><div>${s.qNo?`第${s.qNo}問`:''}</div></div>`;
+  const head=`<div class="sub-head"><div>${esc(s.name)}　<span class="muted">${s.score}点</span></div><div>${s.qNo?esc(s.qLabel):''}</div></div>`;
   const numBoxes=nums=>`<div class="my-nums">${nums.map(n=>`<span class="my-num">${n}</span>`).join('')}</div>`;
   const timer=`<div class="timer-wrap"><div class="timer sub" id="ng-timer">${timerText(Math.max(0, subEndsAt-Date.now()))}</div></div>`;
   const see='<p class="muted">ホスト画面を見てください</p>';
@@ -1440,7 +1445,7 @@ function renderNgSub(){
   if(s.phase==='lobby'){
     html=`<div class="p-center"><h2>${esc(s.name)}さん、ようこそ！</h2><p>ニゴアマリ</p><p>ゲーム開始までお待ちください。</p>${see}</div>`;
   } else if(s.phase==='prep'){
-    html=`<div class="p-center"><h2>第${s.qNo}問の準備中…</h2>${see}</div>`;
+    html=`<div class="p-center"><h2>${esc(s.qLabel)}の準備中…</h2>${see}</div>`;
   } else if((s.phase==='hint'||s.phase==='predict') && !s.inRound){
     html=`<div class="p-center"><h2>この問題は観戦です</h2><p>次の問題から参加できます。</p>${see}</div>`;
   } else if(s.phase==='hint'){
@@ -1477,9 +1482,10 @@ function renderNgSub(){
   } else if(s.phase==='reveal'){
     const r=s.myRow;
     let res='';
-    if(r && s.revealStep>=1) res = r.correct ? `<div class="result-banner clear"><div class="big">⭕ 正解！ +${r.gain}点</div></div>`
+    if(r && s.revealStep>=1) res = r.correct ? `<div class="result-banner clear"><div class="big">⭕ 正解！${s.practice?'':` +${r.gain}点`}</div></div>`
                                              : `<div class="result-banner fail"><div class="big">残念…</div><div>正解は ${s.answer}</div></div>`;
-    if(r && s.revealStep>=2 && r.loss) res+=`<div class="note">⚠ あなたの数字が誤答で書かれたため -${r.loss}点</div>`;
+    if(r && s.revealStep>=2 && r.loss) res+=`<div class="note">⚠ あなたの数字が誤答で書かれたため ${s.practice?`ペナルティ（本番なら -${r.loss}点）`:`-${r.loss}点`}</div>`;
+    if(s.practice && s.revealStep>=1) res+='<p class="muted">例題のため、得点は合計に入りません</p>';
     html=`<div class="p-center" style="padding-top:24px"><h2>結果発表</h2>
       ${r?`<p>あなたの予想：<b style="font-size:24px">${r.guess!=null?r.guess:'未回答'}</b></p>`:''}
       ${res}${s.revealStep>=2?`<p>現在の得点：<b style="font-size:22px">${s.score}点</b></p>`:''}${see}</div>`;
@@ -1589,6 +1595,8 @@ function renderAdmin(){
         <label>正解の得点（＋）<input type="number" id="set-correct" min="0" max="999" value="${st.correct}"></label>
         <label>ペナルティ（書かれるごとに −）<input type="number" id="set-penalty" min="0" max="999" value="${st.penalty}"></label>
       </div>
+      <label class="chk" style="font-size:16px;margin:4px 0 10px"><input type="checkbox" id="set-practice" ${st.practiceFirst?'checked':''}>
+        <span><b>1問目を例題にする</b><br><small class="muted">例題の得点は最終結果に入りません。例題は問題数にも数えず、2問目を「第1問」と表示します。</small></span></label>
       <p class="muted" style="font-size:14px">どちらのフェイズも、時間が過ぎても解答は送れます。</p>
       <button class="primary" data-act="savesettings">設定を保存</button>
     </div>
@@ -1683,7 +1691,8 @@ function onAdminClick(e){
   }
   else if(act==='savesettings'){
     const num=id=>Math.max(0, Math.round(Number(document.getElementById(id).value)||0));
-    const s={time:Math.max(5, num('set-time')), predictTime:Math.max(5, num('set-ptime')), correct:num('set-correct'), penalty:num('set-penalty')};
+    const s={time:Math.max(5, num('set-time')), predictTime:Math.max(5, num('set-ptime')), correct:num('set-correct'), penalty:num('set-penalty'),
+             practiceFirst:document.getElementById('set-practice').checked};
     lsSet(LS.settings, s); renderAdmin(); showToast('設定を保存しました', 'clear');
   }
   else if(act==='unex'){ const s=getExcluded(); s.delete(b.dataset.w); setExcluded(s); renderAdmin(); }
