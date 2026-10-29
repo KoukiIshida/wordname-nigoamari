@@ -185,7 +185,9 @@ input[type=number],select{font:inherit;padding:10px 12px;border-radius:8px;borde
 .rv-card.correct{background:#174d2e;border-color:var(--ok)}
 .rv-card.wrong{opacity:.75}
 .rv-name{font-size:22px;font-weight:900}
-.rv-hint{color:var(--muted);margin:4px 0 8px;font-weight:700}
+.rv-hint{margin:6px 0 10px;font-weight:900;font-size:26px;color:#fff;background:#0d1526;border-radius:10px;padding:6px 8px;word-break:break-all}
+.rv-hint small{display:block;font-size:12px;color:var(--muted);font-weight:700}
+.assign-table td.hint-cell{font-size:20px;font-weight:900;color:#fff}
 .rv-guess{font-size:22px;font-weight:800}
 .rv-pt{margin-top:8px;font-weight:900;font-size:20px}
 .rv-pt.plus,td.plus{color:var(--ok)}
@@ -1217,7 +1219,7 @@ function renderNgHost(){
       panel=`<h2 class="rv-title">結果発表 ― みんなの予想</h2>
         <div class="rv-cards">${rv.rows.map(r=>`<div class="rv-card">
           <div class="rv-name">${esc(r.name)}</div>
-          <div class="rv-hint">ヒント「${esc(r.hint)||'—'}」</div>
+          <div class="rv-hint"><small>回答した言葉</small>${r.hint?`「${esc(r.hint)}」`:'<span class="muted">未回答</span>'}</div>
           <div class="rv-guess">${r.guess!=null?ngNumTag(r.guess):'<span class="muted">未回答</span>'}</div></div>`).join('')}</div>
         <div class="row" style="justify-content:center;margin-top:16px"><button class="primary big-btn" data-act="ng-rnext" data-enter>正解発表 ▶</button></div>`;
     } else if(st===1){
@@ -1227,7 +1229,7 @@ function renderNgHost(){
           <div class="sub">${nc?`正解者 ${nc}人${rv.practice?'（例題のため得点なし）':`（+${rv.correctPts}点）`}`:'正解者はいませんでした'}</div></div>
         <div class="rv-cards">${rv.rows.map(r=>`<div class="rv-card ${r.correct?'correct':'wrong'}">
           <div class="rv-name">${esc(r.name)}</div>
-          <div class="rv-hint">ヒント「${esc(r.hint)||'—'}」</div>
+          <div class="rv-hint"><small>回答した言葉</small>${r.hint?`「${esc(r.hint)}」`:'<span class="muted">未回答</span>'}</div>
           <div class="rv-guess">${r.guess!=null?ngNumTag(r.guess):'<span class="muted">未回答</span>'}</div>
           ${r.correct?`<div class="rv-pt plus">⭕ 正解${rv.practice?'':` +${r.gain}点`}</div>`:''}</div>`).join('')}</div>
         <div class="row" style="justify-content:center;margin-top:16px"><button class="primary big-btn" data-act="ng-rnext" data-enter>数字の割り振りを見る ▶</button></div>`;
@@ -1243,9 +1245,10 @@ function renderNgHost(){
         : '<div class="pen-none">誤答によるペナルティはありません</div>';
       panel=`<h2 class="rv-title">数字の割り振り</h2>
         ${rv.practice?'<div class="tie-note">例題のため、得点は合計に入りません（本番の第1問から加算されます）</div>':''}
-        <div class="table-wrap"><table class="assign-table"><thead><tr><th>名前</th><th>割り振られた数字</th><th>予想</th><th>今回</th><th>合計</th></tr></thead><tbody>
+        <div class="table-wrap"><table class="assign-table"><thead><tr><th>名前</th><th>回答した言葉</th><th>割り振られた数字</th><th>予想</th><th>今回</th><th>合計</th></tr></thead><tbody>
           ${rv.rows.map(r=>{ const d=r.gain-r.loss; return `<tr class="${r.correct?'ok':''} ${r.loss?'pen':''}">
             <td><b>${esc(r.name)}</b></td>
+            <td class="hint-cell">${r.hint?`「${esc(r.hint)}」`:'<span class="muted">未回答</span>'}</td>
             <td>${r.nums.map(ngNumTag).join('　')}</td>
             <td>${r.guess!=null?ngNumTag(r.guess):'—'}</td>
             <td class="${d>0?'plus':d<0?'minus':''}"><b>${r.gain&&r.loss?`+${r.gain} −${r.loss}`:d>0?`+${d}`:d<0?`−${-d}`:'0'}</b></td>
