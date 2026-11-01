@@ -161,13 +161,13 @@ input[type=number],select{font:inherit;padding:10px 12px;border-radius:8px;borde
 @media (max-width:700px){ .game-select{grid-template-columns:1fr} }
 
 /* ===== ニゴアマリ ===== */
-.ng-words{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
-.ng-words.compact{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.ng-words{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.ng-words.compact{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 .ng-word{background:#fff;color:#1d1d1f;border-radius:12px;display:flex;align-items:center;gap:12px;padding:14px 16px;font-weight:800;font-size:28px;border:3px solid transparent}
 .ng-words.compact .ng-word{font-size:19px;padding:8px 10px;gap:8px}
 .ng-word .num{flex:none;width:46px;height:46px;border-radius:50%;background:#1d2a48;color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900}
 .ng-words.compact .ng-word .num{width:32px;height:32px;font-size:17px}
-.ng-word .w{word-break:break-all;line-height:1.2}
+.ng-word .w{white-space:nowrap;overflow:hidden;flex:1;min-width:0;line-height:1.2}
 .ng-word.clickable{cursor:pointer}
 .ng-word.clickable:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.35)}
 .ng-word.answer{background:#fff1b8;border-color:var(--clear);box-shadow:0 0 0 4px rgba(255,210,63,.35)}
@@ -194,7 +194,7 @@ input[type=number],select{font:inherit;padding:10px 12px;border-radius:8px;borde
 td.minus{color:#ff7a7a}
 .numtag{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;padding:0 8px;border-radius:18px;background:var(--accent);color:#1a1a1a;font-weight:900;font-size:20px;margin-right:6px}
 .numtag.big{min-width:120px;height:120px;border-radius:60px;font-size:72px}
-.numword{font-weight:800}
+.numword{font-weight:800;white-space:nowrap}
 .answer-banner{text-align:center;background:linear-gradient(135deg,#6b4a00,#c99400);border-radius:18px;padding:18px;margin-bottom:16px;animation:pop .45s ease-out}
 .answer-banner .lbl{font-size:22px;font-weight:800}
 .answer-banner .ans{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0}
@@ -1167,6 +1167,15 @@ function ngStatusChips(map, label){
     ${parts.map(p=>`<span class="chip">${map[p]!=null && map[p]!==''?'<b style="color:var(--ok)">✓</b>':'<span class="muted">…</span>'} ${esc(ngName(p))}</span>`).join('')}
   </div>`;
 }
+/* ニゴアマリの単語カード：1単語が途中で改行されないよう、枠に収まるまで文字を小さくする */
+function fitNgWords(){
+  document.querySelectorAll('.ng-word .w').forEach(el=>{
+    el.style.fontSize='';
+    let fs=parseFloat(getComputedStyle(el).fontSize);
+    while(el.scrollWidth>el.clientWidth && fs>10){ fs-=1; el.style.fontSize=fs+'px'; }
+  });
+}
+window.addEventListener('resize', ()=>{ if(MODE==='host') fitNgWords(); });
 function renderNgHost(){
   document.title='ニゴアマリ';
   const app=document.getElementById('app');
@@ -1287,6 +1296,7 @@ function renderNgHost(){
   if(qr && myHostId) new QRCode(qr, {text:joinUrl(), width:260, height:260});
   if(ph!=='prep') document.querySelectorAll('#modal-root .swap-cand').forEach(el=>el.closest('.modal-bg').remove());
   tickTimer();
+  fitNgWords();
 }
 
 /** サブに送る画面情報（ニゴアマリ） */
